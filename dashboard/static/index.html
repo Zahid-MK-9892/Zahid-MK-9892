@@ -2,649 +2,787 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>F.R.I.D.A.Y — Trading Dashboard</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  :root {
-    --bg: #0d0f14;
-    --bg2: #13161e;
-    --bg3: #1a1e2a;
-    --border: rgba(255,255,255,0.07);
-    --text: #e2e8f0;
-    --muted: #64748b;
-    --accent: #6366f1;
-    --accent2: #818cf8;
-    --green: #10b981;
-    --red: #ef4444;
-    --amber: #f59e0b;
-    --cyan: #06b6d4;
-    --radius: 12px;
-    --font: 'Inter', system-ui, sans-serif;
-  }
-
-  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
-
-  /* Layout */
-  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 220px; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 24px 0; z-index: 10; }
-  .main { margin-left: 220px; padding: 28px 32px; min-height: 100vh; }
-
-  /* Sidebar */
-  .logo { padding: 0 20px 28px; }
-  .logo-text { font-size: 15px; font-weight: 700; letter-spacing: 1px; color: var(--accent2); }
-  .logo-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
-  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; cursor: pointer; font-size: 13px; color: var(--muted); border-left: 2px solid transparent; transition: all .15s; }
-  .nav-item:hover { color: var(--text); background: var(--bg3); }
-  .nav-item.active { color: var(--accent2); border-left-color: var(--accent); background: rgba(99,102,241,0.08); }
-  .nav-icon { font-size: 16px; width: 20px; text-align: center; }
-  .status-dot { width: 8px; height: 8px; border-radius: 50%; margin: 0 20px 0 auto; }
-  .status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
-  .status-dot.idle { background: var(--muted); }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-
-  /* Pages */
-  .page { display: none; }
-  .page.active { display: block; }
-
-  /* Header */
-  .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
-  .page-title { font-size: 22px; font-weight: 600; }
-  .page-subtitle { font-size: 13px; color: var(--muted); margin-top: 3px; }
-
-  /* Cards */
-  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
-  .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 8px; }
-  .card-value { font-size: 28px; font-weight: 600; }
-  .card-value.green { color: var(--green); }
-  .card-value.red { color: var(--red); }
-  .card-value.amber { color: var(--amber); }
-  .card-value.cyan { color: var(--cyan); }
-  .card-sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
-
-  /* Grid */
-  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
-  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
-
-  /* Buttons */
-  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; border: none; cursor: pointer; transition: all .15s; }
-  .btn-primary { background: var(--accent); color: #fff; }
-  .btn-primary:hover { background: var(--accent2); }
-  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
-  .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
-  .btn-outline:hover { border-color: var(--accent); color: var(--accent2); }
-  .btn-danger { background: rgba(239,68,68,.1); color: var(--red); border: 1px solid rgba(239,68,68,.2); }
-  .btn-danger:hover { background: rgba(239,68,68,.2); }
-  .btn-green { background: rgba(16,185,129,.15); color: var(--green); border: 1px solid rgba(16,185,129,.2); }
-  .btn-green:hover { background: rgba(16,185,129,.25); }
-
-  /* Table */
-  .table-wrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { padding: 10px 14px; text-align: left; color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; border-bottom: 1px solid var(--border); }
-  td { padding: 12px 14px; border-bottom: 1px solid var(--border); }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: rgba(255,255,255,.02); }
-
-  /* Badge */
-  .badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 99px; font-size: 11px; font-weight: 600; }
-  .badge-green  { background: rgba(16,185,129,.15); color: var(--green); }
-  .badge-red    { background: rgba(239,68,68,.15);  color: var(--red); }
-  .badge-amber  { background: rgba(245,158,11,.15); color: var(--amber); }
-  .badge-purple { background: rgba(99,102,241,.15); color: var(--accent2); }
-  .badge-cyan   { background: rgba(6,182,212,.15);  color: var(--cyan); }
-
-  /* Log */
-  .log-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; height: 300px; overflow-y: auto; font-family: 'Fira Mono', monospace; font-size: 12px; }
-  .log-entry { padding: 2px 0; color: var(--muted); }
-  .log-entry .time { color: var(--accent2); margin-right: 8px; }
-  .log-entry.buy .msg { color: var(--green); }
-  .log-entry.error .msg { color: var(--red); }
-
-  /* Form */
-  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .form-group { display: flex; flex-direction: column; gap: 6px; }
-  .form-group label { font-size: 12px; color: var(--muted); }
-  .form-group input, .form-group select { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 13px; transition: border .15s; width: 100%; }
-  .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--accent); }
-  .form-group textarea { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 13px; width: 100%; min-height: 80px; resize: vertical; }
-  .form-group textarea:focus { outline: none; border-color: var(--accent); }
-  .section-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
-  .toggle-wrap { display: flex; align-items: center; gap: 12px; }
-  .toggle { position: relative; width: 40px; height: 22px; }
-  .toggle input { opacity: 0; width: 0; height: 0; }
-  .toggle-slider { position: absolute; inset: 0; background: var(--border); border-radius: 99px; cursor: pointer; transition: .2s; }
-  .toggle-slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
-  .toggle input:checked + .toggle-slider { background: var(--accent); }
-  .toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
-
-  /* Chip list */
-  .chip-list { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
-  .chip-x { cursor: pointer; color: var(--muted); font-size: 14px; line-height: 1; }
-  .chip-x:hover { color: var(--red); }
-  .chip-input { display: flex; gap: 8px; margin-top: 8px; }
-  .chip-input input { flex: 1; }
-
-  /* Toast */
-  #toast { position: fixed; bottom: 24px; right: 24px; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 12px 20px; font-size: 13px; opacity: 0; transition: opacity .3s; z-index: 999; }
-  #toast.show { opacity: 1; }
-
-  /* Misc */
-  .separator { height: 1px; background: var(--border); margin: 20px 0; }
-  .empty-state { text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
-  .running-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; background: rgba(16,185,129,.1); border: 1px solid rgba(16,185,129,.2); border-radius: 99px; font-size: 12px; color: var(--green); }
-  .idle-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; background: var(--bg3); border: 1px solid var(--border); border-radius: 99px; font-size: 12px; color: var(--muted); }
-
-  @media (max-width: 900px) {
-    .sidebar { width: 60px; }
-    .logo, .nav-item span, .logo-sub, .logo-text { display: none; }
-    .main { margin-left: 60px; padding: 16px; }
-    .grid-4 { grid-template-columns: 1fr 1fr; }
-    .grid-2 { grid-template-columns: 1fr; }
-    .form-grid { grid-template-columns: 1fr; }
-  }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161e;--bg3:#1a1e2a;--bg4:#21263a;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e2e8f0;--muted:#64748b;--muted2:#94a3b8;
+  --accent:#6366f1;--accent2:#818cf8;
+  --green:#10b981;--green2:#34d399;
+  --red:#ef4444;--red2:#f87171;
+  --amber:#f59e0b;--cyan:#06b6d4;--purple:#a78bfa;
+  --r:12px;--r2:8px;
+}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex}
+/* ── Sidebar ── */
+.sb{width:220px;min-height:100vh;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:0;position:fixed;left:0;top:0;bottom:0;z-index:100}
+.sb-logo{padding:20px 18px 16px;border-bottom:1px solid var(--border)}
+.sb-logo-name{font-size:15px;font-weight:700;color:var(--accent2);letter-spacing:1px}
+.sb-logo-sub{font-size:10px;color:var(--muted);margin-top:2px}
+.sb-nav{flex:1;padding:8px 0;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 18px;cursor:pointer;font-size:13px;color:var(--muted);border-left:2px solid transparent;transition:all .15s;white-space:nowrap}
+.nav-item:hover{color:var(--text);background:var(--bg3)}
+.nav-item.active{color:var(--accent2);border-left-color:var(--accent);background:rgba(99,102,241,.1)}
+.nav-icon{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+.sb-bottom{padding:12px 18px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.status-dot.live{background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+/* ── Main ── */
+.main{margin-left:220px;flex:1;min-height:100vh;padding:28px 32px}
+/* ── Page ── */
+.page{display:none}.page.active{display:block}
+.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.ph-title{font-size:22px;font-weight:600}
+.ph-sub{font-size:13px;color:var(--muted);margin-top:3px}
+/* ── Cards ── */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:20px}
+.card-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.card-val{font-size:28px;font-weight:700}
+.card-sub{font-size:12px;color:var(--muted);margin-top:6px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:20px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+/* ── Colors ── */
+.green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}.cyan{color:var(--cyan)}.purple{color:var(--purple)}.muted{color:var(--muted)}
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:var(--r2);font-size:13px;font-weight:500;border:none;cursor:pointer;transition:all .15s}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent2)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}.btn-outline:hover{border-color:var(--accent);color:var(--accent2)}
+.btn-danger{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.2)}.btn-danger:hover{background:rgba(239,68,68,.2)}
+.btn-green{background:rgba(16,185,129,.12);color:var(--green);border:1px solid rgba(16,185,129,.2)}.btn-green:hover{background:rgba(16,185,129,.2)}
+.btn-sm{padding:5px 11px;font-size:12px}
+/* ── Table ── */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{padding:9px 12px;text-align:left;color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+td{padding:11px 12px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+/* ── Badge ── */
+.badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:99px;font-size:11px;font-weight:600}
+.badge-green{background:rgba(16,185,129,.15);color:var(--green)}
+.badge-red{background:rgba(239,68,68,.15);color:var(--red)}
+.badge-amber{background:rgba(245,158,11,.15);color:var(--amber)}
+.badge-purple{background:rgba(167,139,250,.15);color:var(--purple)}
+.badge-cyan{background:rgba(6,182,212,.15);color:var(--cyan)}
+.badge-gray{background:rgba(100,116,139,.15);color:var(--muted2)}
+/* ── Log ── */
+.log-box{background:var(--bg);border:1px solid var(--border);border-radius:var(--r2);padding:14px;height:280px;overflow-y:auto;font-family:monospace;font-size:12px}
+.log-line{padding:2px 0;color:var(--muted)}
+.log-line .t{color:var(--accent2);margin-right:8px}
+.log-line.buy .m{color:var(--green)}
+.log-line.error .m{color:var(--red)}
+.log-line.warn .m{color:var(--amber)}
+/* ── Form ── */
+.fg{display:flex;flex-direction:column;gap:6px}
+.fg label{font-size:12px;color:var(--muted)}
+.fg input,.fg select,.fg textarea{background:var(--bg);border:1px solid var(--border);border-radius:var(--r2);padding:9px 12px;color:var(--text);font-size:13px;width:100%;transition:border .15s}
+.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:var(--accent)}
+.fg textarea{min-height:70px;resize:vertical}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.sec-title{font-size:14px;font-weight:600;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.sep{height:1px;background:var(--border);margin:18px 0}
+/* ── Toggle ── */
+.tog{position:relative;width:38px;height:21px;display:inline-block}
+.tog input{opacity:0;width:0;height:0}
+.tog-sl{position:absolute;inset:0;background:var(--border2);border-radius:99px;cursor:pointer;transition:.2s}
+.tog-sl::before{content:'';position:absolute;width:15px;height:15px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+.tog input:checked+.tog-sl{background:var(--accent)}
+.tog input:checked+.tog-sl::before{transform:translateX(17px)}
+/* ── Chips ── */
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:3px 9px;font-size:12px;display:flex;align-items:center;gap:5px}
+.chip-x{cursor:pointer;color:var(--muted);font-size:14px}.chip-x:hover{color:var(--red)}
+.chip-row{display:flex;gap:8px;margin-top:8px}
+.chip-row input{flex:1}
+/* ── Chart container ── */
+.chart-container{border-radius:var(--r2);overflow:hidden;background:var(--bg)}
+/* ── Chat ── */
+.chat-wrap{display:flex;flex-direction:column;height:520px}
+.chat-msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.chat-bubble{max-width:75%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.6}
+.chat-bubble.user{background:var(--accent);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.chat-bubble.friday{background:var(--bg3);color:var(--text);align-self:flex-start;border-bottom-left-radius:4px}
+.chat-input-row{display:flex;gap:10px;padding:14px 16px;border-top:1px solid var(--border)}
+.chat-input-row input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);padding:10px 14px;color:var(--text);font-size:13px}
+.chat-input-row input:focus{outline:none;border-color:var(--accent)}
+/* ── Backtest result ── */
+.bt-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.bt-card{background:var(--bg3);border-radius:var(--r2);padding:14px}
+.bt-label{font-size:11px;color:var(--muted);margin-bottom:4px}
+.bt-val{font-size:20px;font-weight:700}
+/* ── Empty ── */
+.empty{text-align:center;padding:36px;color:var(--muted);font-size:13px}
+/* ── Toast ── */
+#toast{position:fixed;bottom:22px;right:22px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:11px 18px;font-size:13px;opacity:0;transition:opacity .3s;z-index:999;pointer-events:none}
+#toast.show{opacity:1}
+/* ── Progress bar ── */
+.prog-bar{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-top:8px}
+.prog-fill{height:100%;border-radius:2px;transition:width .4s}
+/* ── Running indicator ── */
+.running-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.2);border-radius:99px;font-size:12px;color:var(--green)}
+.idle-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:99px;font-size:12px;color:var(--muted)}
+/* ── WhatsApp setup box ── */
+.wa-box{background:rgba(37,211,102,.06);border:1px solid rgba(37,211,102,.2);border-radius:var(--r);padding:18px}
+.wa-steps{list-style:none;display:flex;flex-direction:column;gap:10px;margin:14px 0}
+.wa-steps li{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--muted2)}
+.wa-step-num{background:rgba(37,211,102,.15);color:#25d366;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px}
 </style>
 </head>
 <body>
 
 <!-- Sidebar -->
-<nav class="sidebar">
-  <div class="logo">
-    <div class="logo-text">F.R.I.D.A.Y</div>
-    <div class="logo-sub">AI Trading Bot</div>
+<nav class="sb">
+  <div class="sb-logo">
+    <div class="sb-logo-name">F.R.I.D.A.Y</div>
+    <div class="sb-logo-sub">AI Swing Trading Bot</div>
   </div>
-  <div class="nav-item active" onclick="showPage('dashboard')">
-    <span class="nav-icon">📊</span><span>Dashboard</span>
+  <div class="sb-nav">
+    <div class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span>Dashboard</div>
+    <div class="nav-item" data-page="positions"><span class="nav-icon">💼</span>Positions</div>
+    <div class="nav-item" data-page="charts"><span class="nav-icon">📈</span>Charts</div>
+    <div class="nav-item" data-page="scan"><span class="nav-icon">🔍</span>Scan & Trade</div>
+    <div class="nav-item" data-page="backtest"><span class="nav-icon">🧪</span>Backtest</div>
+    <div class="nav-item" data-page="chat"><span class="nav-icon">💬</span>Chat with FRIDAY</div>
+    <div class="nav-item" data-page="alerts"><span class="nav-icon">🔔</span>WhatsApp Alerts</div>
+    <div class="nav-item" data-page="settings"><span class="nav-icon">⚙️</span>Settings</div>
+    <div class="nav-item" data-page="logs"><span class="nav-icon">📋</span>Logs</div>
   </div>
-  <div class="nav-item" onclick="showPage('positions')">
-    <span class="nav-icon">💼</span><span>Positions</span>
+  <div class="sb-bottom">
+    <div class="status-dot" id="sb-dot"></div>
+    <span id="sb-status-text">Idle</span>
   </div>
-  <div class="nav-item" onclick="showPage('scan')">
-    <span class="nav-icon">🔍</span><span>Scan &amp; Trade</span>
-  </div>
-  <div class="nav-item" onclick="showPage('settings')">
-    <span class="nav-icon">⚙️</span><span>Settings</span>
-  </div>
-  <div class="nav-item" onclick="showPage('logs')">
-    <span class="nav-icon">📋</span><span>Logs</span>
-  </div>
-  <div style="flex:1"></div>
-  <div id="sidebar-status" class="status-dot idle" title="Bot status"></div>
 </nav>
 
-<!-- Main Content -->
 <main class="main">
 
-  <!-- DASHBOARD PAGE -->
-  <div id="page-dashboard" class="page active">
-    <div class="page-header">
-      <div>
-        <div class="page-title">Dashboard</div>
-        <div class="page-subtitle" id="last-updated">Loading...</div>
-      </div>
-      <div id="bot-status-badge" class="idle-badge">⬤ Idle</div>
+<!-- ══ DASHBOARD ══ -->
+<div id="page-dashboard" class="page active">
+  <div class="ph">
+    <div><div class="ph-title">Dashboard</div><div class="ph-sub" id="dash-updated">Loading...</div></div>
+    <div id="dash-status-pill" class="idle-pill">⬤ Idle</div>
+  </div>
+  <div class="grid-4">
+    <div class="card"><div class="card-label">Total P&L</div><div class="card-val" id="d-pnl">$0.00</div><div class="card-sub" id="d-trades">0 closed trades</div></div>
+    <div class="card"><div class="card-label">Win Rate</div><div class="card-val cyan" id="d-wr">0%</div><div class="card-sub" id="d-wl">0W / 0L</div></div>
+    <div class="card"><div class="card-label">Open Positions</div><div class="card-val amber" id="d-open">0</div><div class="card-sub" id="d-upnl">Unrealised P&L: $0.00</div></div>
+    <div class="card"><div class="card-label">Mode</div><div class="card-val" id="d-mode" style="font-size:18px">—</div><div class="card-sub" id="d-interval">Every — min</div></div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="sec-title">Open Positions</div>
+      <div class="tbl-wrap" id="dash-pos-table"><div class="empty">No open positions yet.</div></div>
     </div>
-
-    <div class="grid-4">
-      <div class="card">
-        <div class="card-label">Total P&amp;L</div>
-        <div class="card-value green" id="stat-pnl">$0.00</div>
-        <div class="card-sub" id="stat-trades">0 closed trades</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Win Rate</div>
-        <div class="card-value cyan" id="stat-winrate">0%</div>
-        <div class="card-sub" id="stat-wl">0W / 0L</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Open Positions</div>
-        <div class="card-value amber" id="stat-open">0</div>
-        <div class="card-sub">Active trades</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Mode</div>
-        <div class="card-value" id="stat-mode" style="font-size:18px">—</div>
-        <div class="card-sub" id="stat-interval">Every — min</div>
-      </div>
+    <div class="card">
+      <div class="sec-title">Watchlists</div>
+      <div style="margin-bottom:14px"><div class="card-label">Stocks</div><div class="chips" id="dash-stocks"></div></div>
+      <div><div class="card-label">Crypto</div><div class="chips" id="dash-crypto"></div></div>
     </div>
+  </div>
+</div>
 
+<!-- ══ POSITIONS ══ -->
+<div id="page-positions" class="page">
+  <div class="ph">
+    <div><div class="ph-title">Open Positions</div><div class="ph-sub">Live P&L updates every 30 seconds</div></div>
+    <button class="btn btn-outline" onclick="loadPositions()">↻ Refresh</button>
+  </div>
+  <div class="card">
+    <div class="tbl-wrap" id="pos-table"><div class="empty">No open positions.</div></div>
+  </div>
+</div>
+
+<!-- ══ CHARTS ══ -->
+<div id="page-charts" class="page">
+  <div class="ph">
+    <div><div class="ph-title">Price Charts</div><div class="ph-sub">Candlestick chart with SMA20, SMA50 and RSI</div></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <select id="chart-ticker" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:7px 12px;color:var(--text);font-size:13px"></select>
+      <select id="chart-period" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:7px 12px;color:var(--text);font-size:13px">
+        <option value="1mo">1 Month</option>
+        <option value="3mo" selected>3 Months</option>
+        <option value="6mo">6 Months</option>
+        <option value="1y">1 Year</option>
+      </select>
+      <button class="btn btn-primary" onclick="loadChart()">Load Chart</button>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:16px">
+    <div id="chart-main" class="chart-container" style="height:320px"></div>
+  </div>
+  <div class="card">
+    <div class="card-label" style="margin-bottom:10px">RSI (14)</div>
+    <div id="chart-rsi" class="chart-container" style="height:140px"></div>
+  </div>
+</div>
+
+<!-- ══ SCAN & TRADE ══ -->
+<div id="page-scan" class="page">
+  <div class="ph">
+    <div><div class="ph-title">Scan & Trade</div><div class="ph-sub">Trigger FRIDAY to analyse markets and place paper trades</div></div>
+    <button class="btn btn-primary" id="scan-btn" onclick="triggerScan()">▶ Run Scan Now</button>
+  </div>
+  <div class="grid-3">
+    <div class="card"><div class="card-label">Capital per trade</div><div class="card-val cyan" id="sc-cap">$500</div></div>
+    <div class="card"><div class="card-label">Stop loss</div><div class="card-val red" id="sc-sl">5%</div></div>
+    <div class="card"><div class="card-label">Take profit</div><div class="card-val green" id="sc-tp">10%</div></div>
+  </div>
+  <div class="card">
+    <div class="sec-title">Live Scan Log</div>
+    <div class="log-box" id="scan-log-box"><div class="log-line"><span class="m muted">Waiting for scan...</span></div></div>
+  </div>
+</div>
+
+<!-- ══ BACKTEST ══ -->
+<div id="page-backtest" class="page">
+  <div class="ph"><div><div class="ph-title">Backtest</div><div class="ph-sub">Test FRIDAY's strategy on historical data</div></div></div>
+  <div class="card" style="margin-bottom:18px">
+    <div class="sec-title">Backtest Parameters</div>
+    <div class="form-grid" style="margin-bottom:16px">
+      <div class="fg"><label>Ticker</label><input id="bt-ticker" value="AAPL" placeholder="e.g. AAPL, MSFT, BTC-USD"></div>
+      <div class="fg"><label>Period</label>
+        <select id="bt-period">
+          <option value="3mo">3 Months</option>
+          <option value="6mo">6 Months</option>
+          <option value="1y" selected>1 Year</option>
+          <option value="2y">2 Years</option>
+        </select>
+      </div>
+      <div class="fg"><label>Stop Loss (%)</label><input id="bt-sl" type="number" value="5" min="1" max="20"></div>
+      <div class="fg"><label>Take Profit (%)</label><input id="bt-tp" type="number" value="10" min="2" max="50"></div>
+    </div>
+    <button class="btn btn-primary" id="bt-btn" onclick="runBacktest()">▶ Run Backtest</button>
+  </div>
+  <div id="bt-results" style="display:none">
+    <div class="bt-grid" id="bt-stats"></div>
     <div class="grid-2">
       <div class="card">
-        <div class="section-title">Open Positions</div>
-        <div class="table-wrap" id="dash-positions-table">
-          <div class="empty-state">No open positions yet.</div>
-        </div>
+        <div class="sec-title">Equity Curve</div>
+        <div id="bt-chart" style="height:200px"></div>
       </div>
       <div class="card">
-        <div class="section-title">Watchlists</div>
-        <div style="margin-bottom:14px">
-          <div class="card-label">Stocks</div>
-          <div class="chip-list" id="dash-stocks"></div>
-        </div>
-        <div>
-          <div class="card-label">Crypto</div>
-          <div class="chip-list" id="dash-crypto"></div>
-        </div>
+        <div class="sec-title">Recent Trades</div>
+        <div class="tbl-wrap" id="bt-trades"></div>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- POSITIONS PAGE -->
-  <div id="page-positions" class="page">
-    <div class="page-header">
-      <div>
-        <div class="page-title">Open Positions</div>
-        <div class="page-subtitle">Active trades currently held by FRIDAY</div>
+<!-- ══ CHAT ══ -->
+<div id="page-chat" class="page">
+  <div class="ph"><div><div class="ph-title">Chat with FRIDAY</div><div class="ph-sub">Ask anything about your trades, strategy, or market outlook</div></div></div>
+  <div class="card" style="padding:0">
+    <div class="chat-wrap">
+      <div class="chat-msgs" id="chat-msgs">
+        <div class="chat-bubble friday">Hey! I'm FRIDAY, your AI trading assistant 🤖 Ask me anything about your positions, strategy, or market analysis. What's on your mind?</div>
       </div>
-      <button class="btn btn-outline" onclick="loadPositions()">↻ Refresh</button>
+      <div class="chat-input-row">
+        <input id="chat-input" placeholder="Ask FRIDAY anything... e.g. 'Should I add to my AAPL position?'" onkeydown="if(event.key==='Enter')sendChat()">
+        <button class="btn btn-primary" onclick="sendChat()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ALERTS ══ -->
+<div id="page-alerts" class="page">
+  <div class="ph"><div><div class="ph-title">WhatsApp Alerts</div><div class="ph-sub">Get notified on your phone when FRIDAY places a trade</div></div></div>
+  <div class="grid-2">
+    <div class="wa-box">
+      <div style="font-size:16px;font-weight:600;color:#25d366;margin-bottom:4px">WhatsApp Setup Guide</div>
+      <div style="font-size:13px;color:var(--muted2)">Uses Twilio (free tier available)</div>
+      <ol class="wa-steps">
+        <li><span class="wa-step-num">1</span>Go to <strong>twilio.com</strong> → sign up free</li>
+        <li><span class="wa-step-num">2</span>Go to <strong>Messaging → Try it out → Send a WhatsApp message</strong></li>
+        <li><span class="wa-step-num">3</span>Send the join code from your WhatsApp to the Twilio sandbox number</li>
+        <li><span class="wa-step-num">4</span>Copy your <strong>Account SID</strong> and <strong>Auth Token</strong> from Twilio Console</li>
+        <li><span class="wa-step-num">5</span>Add them to your <strong>.env</strong> file and restart the dashboard</li>
+      </ol>
     </div>
     <div class="card">
-      <div class="table-wrap" id="positions-table">
-        <div class="empty-state">No open positions yet.</div>
+      <div class="sec-title">Your .env Configuration</div>
+      <div style="font-family:monospace;font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r2);padding:14px;line-height:2;color:var(--muted2)">
+        <span style="color:var(--cyan)">TWILIO_ACCOUNT_SID</span>=your_account_sid<br>
+        <span style="color:var(--cyan)">TWILIO_AUTH_TOKEN</span>=your_auth_token<br>
+        <span style="color:var(--cyan)">TWILIO_WHATSAPP_FROM</span>=whatsapp:+14155238886<br>
+        <span style="color:var(--cyan)">WHATSAPP_TO</span>=+91xxxxxxxxxx
+      </div>
+      <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+        <div id="wa-status" class="badge badge-gray">Not configured</div>
+        <button class="btn btn-green btn-sm" onclick="testWhatsapp()">Send Test Message</button>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- SCAN & TRADE PAGE -->
-  <div id="page-scan" class="page">
-    <div class="page-header">
-      <div>
-        <div class="page-title">Scan &amp; Trade</div>
-        <div class="page-subtitle">Trigger FRIDAY to analyze the market and place paper trades</div>
-      </div>
-      <button class="btn btn-primary" id="scan-btn" onclick="triggerScan()">▶ Run Scan Now</button>
-    </div>
-
-    <div class="grid-3">
-      <div class="card">
-        <div class="card-label">Capital per trade</div>
-        <div class="card-value cyan" id="scan-capital">$500</div>
-        <div class="card-sub">Max spend per order</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Stop loss</div>
-        <div class="card-value red" id="scan-sl">5%</div>
-        <div class="card-sub">Max loss per trade</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Take profit</div>
-        <div class="card-value green" id="scan-tp">10%</div>
-        <div class="card-sub">Target gain per trade</div>
-      </div>
-    </div>
-
+<!-- ══ SETTINGS ══ -->
+<div id="page-settings" class="page">
+  <div class="ph">
+    <div><div class="ph-title">Settings</div><div class="ph-sub">Configure FRIDAY's risk rules, watchlists, and trading mode</div></div>
+    <button class="btn btn-primary" onclick="saveSettings()">💾 Save Settings</button>
+  </div>
+  <div class="grid-2">
     <div class="card">
-      <div class="section-title">Live Scan Log</div>
-      <div class="log-box" id="scan-log">
-        <div class="log-entry"><span class="msg" style="color:var(--muted)">Waiting for scan to start...</span></div>
+      <div class="sec-title">Risk Management</div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="fg"><label>Capital per trade (USD)</label><input type="number" id="s-cap" min="10"></div>
+        <div class="fg"><label>Max risk per trade (%)</label><input type="number" id="s-maxrisk" min="0.5" max="10" step="0.5"></div>
+        <div class="fg"><label>Stop loss (%)</label><input type="number" id="s-sl" min="1" max="30" step="0.5"></div>
+        <div class="fg"><label>Take profit (%)</label><input type="number" id="s-tp" min="2" max="100" step="1"></div>
+        <div class="fg"><label>Scan interval (minutes)</label><input type="number" id="s-int" min="5"></div>
       </div>
-    </div>
-  </div>
-
-  <!-- SETTINGS PAGE -->
-  <div id="page-settings" class="page">
-    <div class="page-header">
-      <div>
-        <div class="page-title">Settings</div>
-        <div class="page-subtitle">Configure FRIDAY's behaviour, risk rules, and watchlists</div>
-      </div>
-      <button class="btn btn-primary" onclick="saveSettings()">💾 Save Settings</button>
-    </div>
-
-    <div class="grid-2">
-      <!-- Risk Settings -->
-      <div class="card">
-        <div class="section-title">Risk Management</div>
-        <div style="display:flex;flex-direction:column;gap:14px">
-          <div class="form-group">
-            <label>Capital per trade (USD)</label>
-            <input type="number" id="s-capital" placeholder="500" min="10">
-          </div>
-          <div class="form-group">
-            <label>Max risk per trade (%)</label>
-            <input type="number" id="s-maxrisk" placeholder="2" min="0.5" max="10" step="0.5">
-          </div>
-          <div class="form-group">
-            <label>Stop loss (%)</label>
-            <input type="number" id="s-sl" placeholder="5" min="1" max="30" step="0.5">
-          </div>
-          <div class="form-group">
-            <label>Take profit (%)</label>
-            <input type="number" id="s-tp" placeholder="10" min="2" max="100" step="1">
-          </div>
-          <div class="form-group">
-            <label>Scan interval (minutes)</label>
-            <input type="number" id="s-interval" placeholder="30" min="5">
-          </div>
-        </div>
-      </div>
-
-      <!-- Bot Settings -->
-      <div class="card">
-        <div class="section-title">Bot Behaviour</div>
-        <div style="display:flex;flex-direction:column;gap:18px">
-          <div class="form-group">
-            <label>Mode</label>
-            <div class="toggle-wrap">
-              <label class="toggle">
-                <input type="checkbox" id="s-mock">
-                <span class="toggle-slider"></span>
-              </label>
-              <span id="mock-label" style="font-size:13px;color:var(--muted)">Mock simulation (safe)</span>
-            </div>
-          </div>
-
-          <div class="separator"></div>
-          <div class="section-title" style="margin-bottom:10px">Stock Watchlist</div>
-          <div class="chip-list" id="stock-chips"></div>
-          <div class="chip-input">
-            <input type="text" id="stock-input" placeholder="e.g. NVDA" style="text-transform:uppercase">
-            <button class="btn btn-outline" onclick="addStock()">+ Add</button>
-          </div>
-
-          <div class="separator"></div>
-          <div class="section-title" style="margin-bottom:10px">Crypto Watchlist</div>
-          <div class="chip-list" id="crypto-chips"></div>
-          <div class="chip-input">
-            <input type="text" id="crypto-input" placeholder="e.g. SOL/USDT" style="text-transform:uppercase">
-            <button class="btn btn-outline" onclick="addCrypto()">+ Add</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- LOGS PAGE -->
-  <div id="page-logs" class="page">
-    <div class="page-header">
-      <div>
-        <div class="page-title">Activity Logs</div>
-        <div class="page-subtitle">Every scan and decision FRIDAY has made</div>
-      </div>
-      <button class="btn btn-outline" onclick="loadLogs()">↻ Refresh</button>
     </div>
     <div class="card">
-      <div class="log-box" id="full-log" style="height:500px"></div>
+      <div class="sec-title">Trading Mode</div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <label class="tog"><input type="checkbox" id="s-mock"><span class="tog-sl"></span></label>
+          <div><div style="font-size:13px;font-weight:500" id="mode-label">Mock mode</div><div style="font-size:12px;color:var(--muted)">Toggle between simulation and paper trading</div></div>
+        </div>
+        <div class="sep"></div>
+        <div class="sec-title" style="margin-bottom:10px">Stock Watchlist</div>
+        <div class="chips" id="s-stocks"></div>
+        <div class="chip-row"><input id="s-stock-in" placeholder="e.g. NVDA" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r2);padding:8px 12px;color:var(--text);font-size:13px"><button class="btn btn-outline btn-sm" onclick="addTicker('stock')">+ Add</button></div>
+        <div class="sep"></div>
+        <div class="sec-title" style="margin-bottom:10px">Crypto Watchlist</div>
+        <div class="chips" id="s-crypto"></div>
+        <div class="chip-row"><input id="s-crypto-in" placeholder="e.g. SOL/USDT" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r2);padding:8px 12px;color:var(--text);font-size:13px"><button class="btn btn-outline btn-sm" onclick="addTicker('crypto')">+ Add</button></div>
+      </div>
     </div>
   </div>
+</div>
+
+<!-- ══ LOGS ══ -->
+<div id="page-logs" class="page">
+  <div class="ph">
+    <div><div class="ph-title">Activity Logs</div><div class="ph-sub">Every scan and decision FRIDAY has made</div></div>
+    <button class="btn btn-outline" onclick="loadLogs()">↻ Refresh</button>
+  </div>
+  <div class="card"><div class="log-box" id="full-log" style="height:520px"></div></div>
+</div>
 
 </main>
-
 <div id="toast"></div>
 
 <script>
-// ── State ─────────────────────────────────────────────────────────────────────
-let currentSettings = {};
-let stockList = [];
-let cryptoList = [];
-let logPoll = null;
+// ── State ──────────────────────────────────────────────────────────────────────
+let S = {};   // settings cache
+let stockList = [], cryptoList = [];
+let chatHistory = [];
+let chartInstance = null, rsiInstance = null;
+let logPollTimer = null;
 
-// ── Navigation ────────────────────────────────────────────────────────────────
-function showPage(id) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('page-' + id).classList.add('active');
-  event.currentTarget.classList.add('active');
-  if (id === 'logs') loadLogs();
-  if (id === 'positions') loadPositions();
-  if (id === 'scan') loadScanConfig();
+// ── Navigation ─────────────────────────────────────────────────────────────────
+document.querySelectorAll('.nav-item').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+    const pg = el.dataset.page;
+    document.getElementById('page-' + pg).classList.add('active');
+    if (pg === 'positions') loadPositions();
+    if (pg === 'logs') loadLogs();
+    if (pg === 'charts') initChartSelectors();
+    if (pg === 'alerts') checkWaConfig();
+    if (pg === 'scan') updateScanCards();
+  });
+});
+
+// ── API ────────────────────────────────────────────────────────────────────────
+async function api(path, method='GET', body=null) {
+  try {
+    const opts = {method, headers:{'Content-Type':'application/json'}};
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(path, opts);
+    return await r.json();
+  } catch(e) { return {error: 'Cannot reach FRIDAY backend'}; }
 }
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
-function toast(msg, color = 'var(--green)') {
+// ── Toast ──────────────────────────────────────────────────────────────────────
+function toast(msg, color='var(--green)') {
   const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.style.borderColor = color;
+  t.textContent = msg; t.style.borderColor = color;
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-// ── API helpers ───────────────────────────────────────────────────────────────
-async function api(path, method = 'GET', body = null) {
-  try {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
-    if (body) opts.body = JSON.stringify(body);
-    const res = await fetch(path, opts);
-    return await res.json();
-  } catch (e) {
-    return { error: 'Cannot connect to FRIDAY backend. Is it running?' };
-  }
-}
-
-// ── Dashboard Load ────────────────────────────────────────────────────────────
+// ── Dashboard ──────────────────────────────────────────────────────────────────
 async function loadDashboard() {
-  const [status, perf, positions] = await Promise.all([
-    api('/api/status'),
-    api('/api/performance'),
-    api('/api/positions'),
-  ]);
+  const [status, perf, pos] = await Promise.all([api('/api/status'), api('/api/performance'), api('/api/positions')]);
+  if (status.error) { document.getElementById('dash-updated').textContent = '⚠ Cannot connect to backend'; return; }
 
-  if (status.error) {
-    document.getElementById('last-updated').textContent = '⚠ ' + status.error;
-    return;
-  }
+  S = status;
+  stockList  = [...(status.stock_watchlist||[])];
+  cryptoList = [...(status.crypto_watchlist||[])];
 
-  currentSettings = status;
-  stockList  = [...status.stock_watchlist];
-  cryptoList = [...status.crypto_watchlist];
+  document.getElementById('dash-updated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
 
-  // Stats
-  document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
-  document.getElementById('stat-pnl').textContent = perf.total_pnl !== undefined
-    ? (perf.total_pnl >= 0 ? '+$' : '-$') + Math.abs(perf.total_pnl).toFixed(2) : '$0.00';
-  document.getElementById('stat-pnl').className = 'card-value ' + (perf.total_pnl >= 0 ? 'green' : 'red');
-  document.getElementById('stat-trades').textContent = (perf.total_trades || 0) + ' closed trades';
-  document.getElementById('stat-winrate').textContent = (perf.win_rate || 0) + '%';
-  document.getElementById('stat-wl').textContent = `${perf.wins||0}W / ${perf.losses||0}L`;
-  document.getElementById('stat-open').textContent = positions.length || 0;
-  document.getElementById('stat-mode').textContent = status.mock_mode ? '🧪 Mock' : '📄 Paper';
-  document.getElementById('stat-interval').textContent = 'Every ' + status.scan_interval + ' min';
+  const pnl = perf.total_pnl ?? 0;
+  document.getElementById('d-pnl').textContent = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2);
+  document.getElementById('d-pnl').className = 'card-val ' + (pnl >= 0 ? 'green' : 'red');
+  document.getElementById('d-trades').textContent = (perf.total_trades || 0) + ' closed trades';
+  document.getElementById('d-wr').textContent = (perf.win_rate || 0) + '%';
+  document.getElementById('d-wl').textContent = `${perf.wins||0}W / ${perf.losses||0}L`;
+  document.getElementById('d-open').textContent = pos.length || 0;
 
-  // Bot status
-  const badge = document.getElementById('bot-status-badge');
-  const dot = document.getElementById('sidebar-status');
+  const totalUnreal = pos.reduce((s,p) => s + (p.unrealized_pnl||0), 0);
+  document.getElementById('d-upnl').textContent = 'Unrealised: ' + (totalUnreal>=0?'+$':'-$') + Math.abs(totalUnreal).toFixed(2);
 
-  // Watchlists
+  document.getElementById('d-mode').textContent = status.mock_mode ? '🧪 Mock' : '📄 Paper';
+  document.getElementById('d-interval').textContent = `Every ${status.scan_interval} min`;
+
   renderChips('dash-stocks', stockList, false);
   renderChips('dash-crypto', cryptoList, false);
+  renderPosTable('dash-pos-table', pos, true);
 
-  // Positions mini-table
-  renderPositionsTable('dash-positions-table', positions, true);
-
-  // Populate settings form
-  document.getElementById('s-capital').value = status.capital_per_trade;
+  // Settings form
+  document.getElementById('s-cap').value     = status.capital_per_trade;
   document.getElementById('s-maxrisk').value = status.max_risk_pct;
-  document.getElementById('s-sl').value = status.stop_loss_pct;
-  document.getElementById('s-tp').value = status.take_profit_pct;
-  document.getElementById('s-interval').value = status.scan_interval;
-  document.getElementById('s-mock').checked = status.mock_mode;
-  document.getElementById('mock-label').textContent = status.mock_mode ? 'Mock simulation (safe)' : 'Paper trading (real API calls)';
-  renderChips('stock-chips', stockList, true, 'stock');
-  renderChips('crypto-chips', cryptoList, true, 'crypto');
+  document.getElementById('s-sl').value      = status.stop_loss_pct;
+  document.getElementById('s-tp').value      = status.take_profit_pct;
+  document.getElementById('s-int').value     = status.scan_interval;
+  document.getElementById('s-mock').checked  = status.mock_mode;
+  document.getElementById('mode-label').textContent = status.mock_mode ? 'Mock simulation (safe)' : 'Paper trading (live API)';
+  renderChips('s-stocks', stockList, true, 'stock');
+  renderChips('s-crypto', cryptoList, true, 'crypto');
+
+  updateScanCards();
 }
 
-// ── Positions ─────────────────────────────────────────────────────────────────
+// ── Positions table ────────────────────────────────────────────────────────────
 async function loadPositions() {
-  const positions = await api('/api/positions');
-  renderPositionsTable('positions-table', positions, false);
+  const pos = await api('/api/positions');
+  renderPosTable('pos-table', pos, false);
 }
 
-function renderPositionsTable(containerId, positions, mini) {
-  const el = document.getElementById(containerId);
-  if (!positions || positions.length === 0) {
-    el.innerHTML = '<div class="empty-state">No open positions yet.</div>';
-    return;
-  }
-  const rows = positions.map(p => `
-    <tr>
+function renderPosTable(id, pos, mini) {
+  const el = document.getElementById(id);
+  if (!pos || !pos.length) { el.innerHTML = '<div class="empty">No open positions.</div>'; return; }
+  const rows = pos.map(p => {
+    const pnl    = p.unrealized_pnl ?? 0;
+    const pnlPct = p.unrealized_pnl_pct ?? 0;
+    const pnlCol = pnl >= 0 ? 'green' : 'red';
+    const cur    = p.current_price ? '$'+p.current_price : '—';
+    return `<tr>
       <td><strong>${p.ticker}</strong></td>
-      <td><span class="badge badge-purple">${p.asset_type || '—'}</span></td>
-      ${!mini ? `<td>${p.shares}</td>` : ''}
+      <td><span class="badge ${p.asset_type==='CRYPTO'?'badge-purple':'badge-cyan'}">${p.asset_type||'STOCK'}</span></td>
       <td>$${p.entry_price}</td>
+      ${!mini ? `<td>${cur}</td>` : ''}
+      <td class="${pnlCol}">${pnl>=0?'+':''}$${pnl.toFixed(2)} <span style="font-size:11px;opacity:.7">(${pnlPct>=0?'+':''}${pnlPct.toFixed(1)}%)</span></td>
       <td style="color:var(--red)">$${p.stop_loss}</td>
       <td style="color:var(--green)">$${p.take_profit}</td>
-      ${!mini ? `<td><span class="badge badge-cyan">${p.broker}</span></td>` : ''}
-    </tr>`).join('');
-
-  el.innerHTML = `<table>
-    <thead><tr>
-      <th>Ticker</th><th>Type</th>
-      ${!mini ? '<th>Shares</th>' : ''}
-      <th>Entry</th><th>Stop</th><th>Target</th>
-      ${!mini ? '<th>Broker</th>' : ''}
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+      ${!mini ? `<td><button class="btn btn-danger btn-sm" onclick="closePos(${p.id},'${p.ticker}')">Close</button></td>` : ''}
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table><thead><tr>
+    <th>Ticker</th><th>Type</th><th>Entry</th>
+    ${!mini?'<th>Current</th>':''}
+    <th>P&L</th><th>Stop</th><th>Target</th>
+    ${!mini?'<th>Action</th>':''}
+  </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-// ── Scan ──────────────────────────────────────────────────────────────────────
-function loadScanConfig() {
-  if (!currentSettings.capital_per_trade) return;
-  document.getElementById('scan-capital').textContent = '$' + currentSettings.capital_per_trade;
-  document.getElementById('scan-sl').textContent = currentSettings.stop_loss_pct + '%';
-  document.getElementById('scan-tp').textContent = currentSettings.take_profit_pct + '%';
+async function closePos(id, ticker) {
+  if (!confirm(`Close position in ${ticker}?`)) return;
+  const r = await api(`/api/close-position/${id}`, 'POST');
+  if (r.error) { toast('Error: '+r.error, 'var(--red)'); return; }
+  toast(`${ticker} closed @ $${r.exit_price} | P&L: $${r.pnl}`);
+  loadPositions(); loadDashboard();
+}
+
+// ── Charts ─────────────────────────────────────────────────────────────────────
+function initChartSelectors() {
+  const sel = document.getElementById('chart-ticker');
+  if (sel.options.length > 0) return;
+  [...(S.stock_watchlist||[]), ...(S.crypto_watchlist||[])].forEach(t => {
+    const o = document.createElement('option'); o.value = t; o.textContent = t; sel.appendChild(o);
+  });
+  loadChart();
+}
+
+async function loadChart() {
+  const ticker = document.getElementById('chart-ticker').value;
+  const period = document.getElementById('chart-period').value;
+  if (!ticker) return;
+
+  const data = await api(`/api/chart/${encodeURIComponent(ticker)}?period=${period}`);
+  if (data.error) { toast('Chart error: '+data.error, 'var(--red)'); return; }
+
+  const candles = data.candles || [];
+  if (!candles.length) return;
+
+  // Main chart
+  const mainEl = document.getElementById('chart-main');
+  mainEl.innerHTML = '';
+  const chart = LightweightCharts.createChart(mainEl, {
+    width: mainEl.offsetWidth, height: 320,
+    layout: {background:{color:'transparent'}, textColor:'#94a3b8'},
+    grid: {vertLines:{color:'rgba(255,255,255,0.04)'}, horzLines:{color:'rgba(255,255,255,0.04)'}},
+    crosshair: {mode: LightweightCharts.CrosshairMode.Normal},
+    rightPriceScale: {borderColor:'rgba(255,255,255,0.1)'},
+    timeScale: {borderColor:'rgba(255,255,255,0.1)', timeVisible:true},
+  });
+
+  const candleSeries = chart.addCandlestickSeries({
+    upColor:'#10b981', downColor:'#ef4444',
+    borderUpColor:'#10b981', borderDownColor:'#ef4444',
+    wickUpColor:'#10b981', wickDownColor:'#ef4444',
+  });
+  candleSeries.setData(candles.map(c => ({time:c.time, open:c.open, high:c.high, low:c.low, close:c.close})));
+
+  const sma20 = chart.addLineSeries({color:'#f59e0b', lineWidth:1, title:'SMA20'});
+  sma20.setData(candles.filter(c=>c.sma20).map(c=>({time:c.time, value:c.sma20})));
+
+  const sma50 = chart.addLineSeries({color:'#818cf8', lineWidth:1, title:'SMA50'});
+  sma50.setData(candles.filter(c=>c.sma50).map(c=>({time:c.time, value:c.sma50})));
+
+  chart.timeScale().fitContent();
+
+  // RSI chart
+  const rsiEl = document.getElementById('chart-rsi');
+  rsiEl.innerHTML = '';
+  const rsiChart = LightweightCharts.createChart(rsiEl, {
+    width: rsiEl.offsetWidth, height: 140,
+    layout: {background:{color:'transparent'}, textColor:'#94a3b8'},
+    grid: {vertLines:{color:'rgba(255,255,255,0.04)'}, horzLines:{color:'rgba(255,255,255,0.04)'}},
+    rightPriceScale: {borderColor:'rgba(255,255,255,0.1)', scaleMargins:{top:0.1,bottom:0.1}},
+    timeScale: {borderColor:'rgba(255,255,255,0.1)', timeVisible:true},
+  });
+  const rsiLine = rsiChart.addLineSeries({color:'#06b6d4', lineWidth:1.5, title:'RSI'});
+  rsiLine.setData(candles.filter(c=>c.rsi).map(c=>({time:c.time, value:c.rsi})));
+
+  const ob = rsiChart.addLineSeries({color:'rgba(239,68,68,.4)', lineWidth:1});
+  ob.setData(candles.filter(c=>c.rsi).map(c=>({time:c.time, value:70})));
+  const os = rsiChart.addLineSeries({color:'rgba(16,185,129,.4)', lineWidth:1});
+  os.setData(candles.filter(c=>c.rsi).map(c=>({time:c.time, value:30})));
+
+  rsiChart.timeScale().fitContent();
+}
+
+// ── Scan ───────────────────────────────────────────────────────────────────────
+function updateScanCards() {
+  if (!S.capital_per_trade) return;
+  document.getElementById('sc-cap').textContent = '$'+S.capital_per_trade;
+  document.getElementById('sc-sl').textContent  = S.stop_loss_pct+'%';
+  document.getElementById('sc-tp').textContent  = S.take_profit_pct+'%';
 }
 
 async function triggerScan() {
   const btn = document.getElementById('scan-btn');
-  btn.disabled = true;
-  btn.textContent = '⏳ Scanning...';
-  appendLog('Scan triggered by user...');
+  btn.disabled = true; btn.textContent = '⏳ Scanning...';
+  appendScanLog('Scan triggered...');
 
-  const res = await api('/api/scan', 'POST');
-  if (res.error) {
-    toast('Error: ' + res.error, 'var(--red)');
-    btn.disabled = false;
-    btn.textContent = '▶ Run Scan Now';
-    return;
-  }
+  const r = await api('/api/scan', 'POST');
+  if (r.error) { toast(r.error, 'var(--red)'); btn.disabled=false; btn.textContent='▶ Run Scan Now'; return; }
 
   toast('Scan started!');
-  updateSidebar(true);
+  setBotStatus(true);
 
-  // Poll logs
-  if (logPoll) clearInterval(logPoll);
-  logPoll = setInterval(async () => {
-    const logs = await api('/api/logs');
-    const status = await api('/api/status');
+  if (logPollTimer) clearInterval(logPollTimer);
+  logPollTimer = setInterval(async () => {
+    const [logs, status] = await Promise.all([api('/api/logs'), api('/api/status')]);
     renderScanLog(logs);
     if (!status.running) {
-      clearInterval(logPoll);
-      btn.disabled = false;
-      btn.textContent = '▶ Run Scan Now';
-      updateSidebar(false);
+      clearInterval(logPollTimer);
+      btn.disabled=false; btn.textContent='▶ Run Scan Now';
+      setBotStatus(false);
       toast('Scan complete!');
+      loadDashboard();
     }
-  }, 1500);
+  }, 1800);
 }
 
-function appendLog(msg) {
-  const box = document.getElementById('scan-log');
-  const div = document.createElement('div');
-  div.className = 'log-entry';
-  div.innerHTML = `<span class="time">${new Date().toLocaleTimeString()}</span><span class="msg">${msg}</span>`;
-  box.appendChild(div);
-  box.scrollTop = box.scrollHeight;
+function appendScanLog(msg) {
+  const box = document.getElementById('scan-log-box');
+  const d = document.createElement('div'); d.className='log-line';
+  d.innerHTML = `<span class="t">${new Date().toLocaleTimeString()}</span><span class="m">${msg}</span>`;
+  box.appendChild(d); box.scrollTop = box.scrollHeight;
 }
 
 function renderScanLog(logs) {
-  const box = document.getElementById('scan-log');
-  if (!logs || !logs.length) return;
+  const box = document.getElementById('scan-log-box');
+  if (!logs?.length) return;
   box.innerHTML = logs.map(l => {
-    const cls = l.msg.includes('BUY') || l.msg.includes('ORDER') ? 'buy' :
-                l.msg.includes('ERROR') ? 'error' : '';
-    return `<div class="log-entry ${cls}">
-      <span class="time">${l.time}</span>
-      <span class="msg">${l.msg}</span>
-    </div>`;
+    const cls = l.msg.includes('BUY')||l.msg.includes('ORDER') ? 'buy' : l.msg.includes('ERROR') ? 'error' : '';
+    return `<div class="log-line ${cls}"><span class="t">${l.time}</span><span class="m">${l.msg}</span></div>`;
   }).join('');
   box.scrollTop = box.scrollHeight;
 }
 
-function updateSidebar(running) {
-  const dot = document.getElementById('sidebar-status');
-  const badge = document.getElementById('bot-status-badge');
-  dot.className = 'status-dot ' + (running ? 'live' : 'idle');
-  badge.className = running ? 'running-badge' : 'idle-badge';
-  badge.textContent = running ? '⬤ Scanning...' : '⬤ Idle';
+function setBotStatus(running) {
+  document.getElementById('sb-dot').className = 'status-dot' + (running?' live':'');
+  document.getElementById('sb-status-text').textContent = running ? 'Scanning...' : 'Idle';
+  const pill = document.getElementById('dash-status-pill');
+  if (pill) { pill.className = running ? 'running-pill' : 'idle-pill'; pill.textContent = running ? '⬤ Scanning...' : '⬤ Idle'; }
 }
 
-// ── Settings ──────────────────────────────────────────────────────────────────
-async function saveSettings() {
-  const payload = {
-    capital_per_trade: parseFloat(document.getElementById('s-capital').value) || currentSettings.capital_per_trade,
-    max_risk_pct: parseFloat(document.getElementById('s-maxrisk').value) || currentSettings.max_risk_pct,
-    stop_loss_pct: parseFloat(document.getElementById('s-sl').value) || currentSettings.stop_loss_pct,
-    take_profit_pct: parseFloat(document.getElementById('s-tp').value) || currentSettings.take_profit_pct,
-    scan_interval: parseInt(document.getElementById('s-interval').value) || currentSettings.scan_interval,
-    mock_mode: document.getElementById('s-mock').checked,
-    stock_watchlist: stockList,
-    crypto_watchlist: cryptoList,
-  };
+// ── Backtest ───────────────────────────────────────────────────────────────────
+async function runBacktest() {
+  const btn = document.getElementById('bt-btn');
+  btn.disabled=true; btn.textContent='⏳ Running...';
 
-  const res = await api('/api/settings', 'POST', payload);
-  if (res.message) {
-    toast('Settings saved!');
-    await loadDashboard();
-  } else {
-    toast('Error saving settings', 'var(--red)');
+  const r = await api('/api/backtest', 'POST', {
+    ticker:     document.getElementById('bt-ticker').value || 'AAPL',
+    period:     document.getElementById('bt-period').value,
+    stop_pct:   parseFloat(document.getElementById('bt-sl').value)||5,
+    target_pct: parseFloat(document.getElementById('bt-tp').value)||10,
+  });
+
+  btn.disabled=false; btn.textContent='▶ Run Backtest';
+
+  if (r.error) { toast('Backtest error: '+r.error, 'var(--red)'); return; }
+
+  document.getElementById('bt-results').style.display='block';
+
+  const pnlColor = r.total_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('bt-stats').innerHTML = `
+    <div class="bt-card"><div class="bt-label">Total Trades</div><div class="bt-val">${r.total_trades}</div></div>
+    <div class="bt-card"><div class="bt-label">Win Rate</div><div class="bt-val" style="color:var(--cyan)">${r.win_rate}%</div></div>
+    <div class="bt-card"><div class="bt-label">Total P&L</div><div class="bt-val" style="color:${pnlColor}">${r.total_pnl>=0?'+':''}$${r.total_pnl}</div></div>
+    <div class="bt-card"><div class="bt-label">Max Drawdown</div><div class="bt-val" style="color:var(--red)">${r.max_drawdown}%</div></div>
+    <div class="bt-card"><div class="bt-label">Avg Win</div><div class="bt-val" style="color:var(--green)">$${r.avg_win}</div></div>
+    <div class="bt-card"><div class="bt-label">Avg Loss</div><div class="bt-val" style="color:var(--red)">$${r.avg_loss}</div></div>
+  `;
+
+  // Equity curve
+  const btEl = document.getElementById('bt-chart');
+  btEl.innerHTML = '';
+  if (r.equity_curve?.length) {
+    const btChart = LightweightCharts.createChart(btEl, {
+      width: btEl.offsetWidth, height: 200,
+      layout: {background:{color:'transparent'}, textColor:'#94a3b8'},
+      grid: {vertLines:{color:'rgba(255,255,255,0.04)'}, horzLines:{color:'rgba(255,255,255,0.04)'}},
+      rightPriceScale: {borderColor:'rgba(255,255,255,0.1)'},
+      timeScale: {visible:false},
+    });
+    const eq = btChart.addLineSeries({color:'#818cf8', lineWidth:2});
+    eq.setData(r.equity_curve.map((v,i) => ({time: i+1, value: v})));
+    btChart.timeScale().fitContent();
   }
+
+  // Trades table
+  if (r.trades?.length) {
+    const rows = r.trades.map(t =>
+      `<tr><td>${t.entry_date}</td><td>${t.ticker||r.ticker}</td><td>$${t.entry}</td><td>$${t.exit}</td>
+       <td class="${t.pnl>=0?'green':'red'}">${t.pnl>=0?'+':''}$${t.pnl}</td>
+       <td><span class="badge ${t.outcome==='WIN'?'badge-green':'badge-red'}">${t.outcome}</span></td></tr>`
+    ).join('');
+    document.getElementById('bt-trades').innerHTML =
+      `<table><thead><tr><th>Date</th><th>Ticker</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+}
+
+// ── Chat ───────────────────────────────────────────────────────────────────────
+async function sendChat() {
+  const inp = document.getElementById('chat-input');
+  const msg = inp.value.trim();
+  if (!msg) return;
+  inp.value = '';
+
+  addBubble(msg, 'user');
+  chatHistory.push({role:'user', content:msg});
+
+  const thinking = addBubble('Thinking...', 'friday');
+  const r = await api('/api/chat', 'POST', {message:msg, history:chatHistory.slice(-10)});
+  thinking.textContent = r.reply || 'Sorry, I could not respond.';
+  if (r.reply) chatHistory.push({role:'assistant', content:r.reply});
+}
+
+function addBubble(text, who) {
+  const box = document.getElementById('chat-msgs');
+  const d   = document.createElement('div');
+  d.className = 'chat-bubble ' + who;
+  d.textContent = text;
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
+  return d;
+}
+
+document.getElementById('chat-input').addEventListener('keydown', e => { if(e.key==='Enter') sendChat(); });
+
+// ── WhatsApp ───────────────────────────────────────────────────────────────────
+async function checkWaConfig() {
+  const r = await api('/api/whatsapp/config');
+  const el = document.getElementById('wa-status');
+  if (r.configured) { el.textContent='Configured ✓'; el.className='badge badge-green'; }
+  else { el.textContent='Not configured'; el.className='badge badge-gray'; }
+}
+
+async function testWhatsapp() {
+  const r = await api('/api/whatsapp/test', 'POST');
+  if (r.status === 'sent') toast('WhatsApp message sent!');
+  else if (r.status === 'mock') toast('Mock mode — message logged to console', 'var(--amber)');
+  else toast('Error: '+(r.error||'unknown'), 'var(--red)');
+}
+
+// ── Settings ───────────────────────────────────────────────────────────────────
+async function saveSettings() {
+  const r = await api('/api/settings', 'POST', {
+    capital_per_trade: parseFloat(document.getElementById('s-cap').value),
+    max_risk_pct:      parseFloat(document.getElementById('s-maxrisk').value),
+    stop_loss_pct:     parseFloat(document.getElementById('s-sl').value),
+    take_profit_pct:   parseFloat(document.getElementById('s-tp').value),
+    scan_interval:     parseInt(document.getElementById('s-int').value),
+    mock_mode:         document.getElementById('s-mock').checked,
+    stock_watchlist:   stockList,
+    crypto_watchlist:  cryptoList,
+  });
+  if (r.message) { toast('Settings saved!'); loadDashboard(); }
+  else toast('Error saving', 'var(--red)');
 }
 
 document.getElementById('s-mock').addEventListener('change', function() {
-  document.getElementById('mock-label').textContent = this.checked ? 'Mock simulation (safe)' : 'Paper trading (real API calls)';
+  document.getElementById('mode-label').textContent = this.checked ? 'Mock simulation (safe)' : 'Paper trading (live API)';
 });
 
-// ── Chips ─────────────────────────────────────────────────────────────────────
-function renderChips(containerId, list, editable, type) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
+function addTicker(type) {
+  const inp = document.getElementById(type==='stock'?'s-stock-in':'s-crypto-in');
+  const val = inp.value.trim().toUpperCase();
+  if (!val) return;
+  if (type==='stock' && !stockList.includes(val)) { stockList.push(val); renderChips('s-stocks',stockList,true,'stock'); }
+  if (type==='crypto' && !cryptoList.includes(val)) { cryptoList.push(val); renderChips('s-crypto',cryptoList,true,'crypto'); }
+  inp.value='';
+}
+document.getElementById('s-stock-in').addEventListener('keydown', e => { if(e.key==='Enter') addTicker('stock'); });
+document.getElementById('s-crypto-in').addEventListener('keydown', e => { if(e.key==='Enter') addTicker('crypto'); });
+
+// ── Chips ──────────────────────────────────────────────────────────────────────
+function renderChips(id, list, editable, type) {
+  const el = document.getElementById(id); if(!el) return;
   el.innerHTML = list.map(t =>
     editable
-      ? `<div class="chip">${t} <span class="chip-x" onclick="removeChip('${type}','${t}')">×</span></div>`
+      ? `<div class="chip">${t}<span class="chip-x" onclick="removeChip('${type}','${t}')">×</span></div>`
       : `<div class="chip">${t}</div>`
   ).join('');
 }
-
 function removeChip(type, ticker) {
-  if (type === 'stock') stockList = stockList.filter(t => t !== ticker);
-  else cryptoList = cryptoList.filter(t => t !== ticker);
-  renderChips(type + '-chips', type === 'stock' ? stockList : cryptoList, true, type);
+  if(type==='stock') stockList=stockList.filter(t=>t!==ticker),renderChips('s-stocks',stockList,true,'stock');
+  else cryptoList=cryptoList.filter(t=>t!==ticker),renderChips('s-crypto',cryptoList,true,'crypto');
 }
 
-function addStock() {
-  const val = document.getElementById('stock-input').value.trim().toUpperCase();
-  if (val && !stockList.includes(val)) { stockList.push(val); renderChips('stock-chips', stockList, true, 'stock'); }
-  document.getElementById('stock-input').value = '';
-}
-
-function addCrypto() {
-  const val = document.getElementById('crypto-input').value.trim().toUpperCase();
-  if (val && !cryptoList.includes(val)) { cryptoList.push(val); renderChips('crypto-chips', cryptoList, true, 'crypto'); }
-  document.getElementById('crypto-input').value = '';
-}
-
-document.getElementById('stock-input').addEventListener('keydown', e => { if (e.key === 'Enter') addStock(); });
-document.getElementById('crypto-input').addEventListener('keydown', e => { if (e.key === 'Enter') addCrypto(); });
-
-// ── Full logs ─────────────────────────────────────────────────────────────────
+// ── Logs ───────────────────────────────────────────────────────────────────────
 async function loadLogs() {
   const logs = await api('/api/logs');
-  const box = document.getElementById('full-log');
-  if (!logs || !logs.length) {
-    box.innerHTML = '<div class="log-entry"><span class="msg">No logs yet. Run a scan first.</span></div>';
-    return;
-  }
-  box.innerHTML = logs.slice().reverse().map(l =>
-    `<div class="log-entry"><span class="time">${l.time}</span><span class="msg">${l.msg}</span></div>`
+  const box  = document.getElementById('full-log');
+  if (!logs?.length) { box.innerHTML='<div class="log-line"><span class="m muted">No logs yet. Run a scan first.</span></div>'; return; }
+  box.innerHTML = [...logs].reverse().map(l =>
+    `<div class="log-line"><span class="t">${l.time}</span><span class="m">${l.msg}</span></div>`
   ).join('');
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Init ───────────────────────────────────────────────────────────────────────
 loadDashboard();
 setInterval(loadDashboard, 30000);
+setInterval(() => {
+  const activePage = document.querySelector('.nav-item.active')?.dataset.page;
+  if (activePage === 'positions') loadPositions();
+}, 30000);
 </script>
 </body>
 </html>
