@@ -26,6 +26,7 @@ from data.news_fetcher import get_news, format_news_for_prompt
 from analysis.ai_engine import analyze_asset
 from trading.risk_manager import approve_trade, calculate_position
 from trading.executor import execute_trade
+from trading.position_manager import check_and_close_positions
 from trading.journal import (
     init_db, log_scan, log_trade,
     get_open_positions, get_performance_summary
@@ -39,7 +40,6 @@ def c(text, color):
         "cyan":   Fore.CYAN,   "green":  Fore.GREEN,
         "yellow": Fore.YELLOW, "red":    Fore.RED,
         "white":  Fore.WHITE,  "dim":    Fore.LIGHTBLACK_EX,
-        "blue":   Fore.BLUE,
     }
     return f"{colors.get(color,'')}{text}{Style.RESET_ALL}"
 
@@ -57,13 +57,59 @@ def banner():
 def log(msg, level="INFO"):
     ts = datetime.now().strftime("%H:%M:%S")
     level_colors = {
-        "INFO":  "white",  "BUY":   "green",
-        "HOLD":  "yellow", "SKIP":  "yellow",
-        "ERROR": "red",    "TRADE": "cyan",
-        "WARN":  "yellow",
+        "INFO":  "white",  "BUY":    "green",
+        "HOLD":  "yellow", "SKIP":   "yellow",
+        "ERROR": "red",    "TRADE":  "cyan",
+        "CLOSE": "cyan",   "WIN":    "green",
+        "LOSS":  "red",
     }
     col = level_colors.get(level, "white")
     print(f"{c(f'[{ts}]', 'dim')} {c(f'[{level}]', col)} {msg}")
+
+
+def check_exits():
+    """
+    Step 1 of every scan cycle.
+    Automatically closes positions that hit stop-loss or take-profit.
+    """
+    log("Checking open positions for exits...", "INFO")
+    closed = check_and_close_positions()
+
+    if not closed:
+        log("No exits triggered.", "INFO")
+        return
+
+    for c_pos in closed:
+        ticker = c_pos["ticker"]
+        reason = c_pos["exit_reason"]
+        pnl    = c_pos["pnl"]
+        outcome= c_pos["outcome"]
+        entry  = c_pos["entry"]
+        exit_p = c_pos["exit"]
+
+        if reason == "TAKE_PROFIT":
+            log(
+                f"TAKE PROFIT HIT ✓ | {ticker} | Entry: ${entry} → Exit: ${exit_p} | "
+                f"P&L: +${pnl}", "WIN"
+            )
+        else:
+            log(
+                f"STOP LOSS HIT | {ticker} | Entry: ${entry} → Exit: ${exit_p} | "
+                f"P&L: ${pnl}", "LOSS"
+            )
+
+        # Send WhatsApp alert on exit
+        try:
+            from notifications.whatsapp import send_custom_message
+            emoji = "🎯" if reason == "TAKE_PROFIT" else "🛑"
+            send_custom_message(
+                f"{emoji} *FRIDAY Exit Alert*\n"
+                f"{'TAKE PROFIT' if reason=='TAKE_PROFIT' else 'STOP LOSS'} hit on *{ticker}*\n"
+                f"Entry: ${entry} → Exit: ${exit_p}\n"
+                f"P&L: {'+'if pnl>=0 else ''}${pnl} ({outcome})"
+            )
+        except Exception:
+            pass
 
 
 def scan_asset(ticker: str):
@@ -86,18 +132,19 @@ def scan_asset(ticker: str):
     articles  = get_news(ticker)
     news_text = format_news_for_prompt(articles)
 
-    # 3. AI / rule-based analysis
+    # 3. Analysis
     analysis = analyze_asset(ticker, market_data, news_text)
     action   = analysis.get("action", "HOLD")
     conf     = analysis.get("confidence", 0)
     source   = analysis.get("source", "unknown")
     reason   = analysis.get("reasoning", "")
-    source_label = "Claude AI" if source == "claude_ai" else "Rule-based"
+    score    = analysis.get("score", "N/A")
+    src_label= "Claude AI" if source == "claude_ai" else f"Rule-based (score:{score})"
 
     log_scan(ticker, price, analysis)
 
-    level = "BUY" if action == "BUY" else ("HOLD" if action == "HOLD" else "INFO")
-    log(f"{ticker} → {action} (conf: {conf}% | {source_label}) | {reason[:75]}...", level)
+    level = "BUY" if action == "BUY" else "HOLD"
+    log(f"{ticker} → {action} (conf:{conf}% | {src_label}) | {reason[:80]}...", level)
 
     if analysis.get("key_signals"):
         log(f"  Signals: {' · '.join(analysis['key_signals'])}", "INFO")
@@ -129,34 +176,50 @@ def scan_asset(ticker: str):
             "BUY"
         )
         log_trade(order, analysis)
+
+        # WhatsApp alert on entry
+        try:
+            from notifications.whatsapp import send_trade_alert
+            send_trade_alert(order, analysis, position)
+        except Exception:
+            pass
     else:
-        log(f"Order failed for {ticker}: {order.get('error', 'unknown error')}", "ERROR")
+        log(f"Order failed for {ticker}: {order.get('error', 'unknown')}", "ERROR")
 
 
 def run_scan_cycle():
-    """Full scan across all watchlisted assets."""
+    """Full scan cycle: exits first, then new entries."""
     print()
-    log(f"Scan cycle started — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "INFO")
-    log(f"Open positions: {len(get_open_positions())}", "INFO")
+    log(f"{'='*50}", "INFO")
+    log(f"Scan cycle — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "INFO")
+    log(f"{'='*50}", "INFO")
+
+    # ── Step 1: Check exits on all open positions ──────────────────────────────
+    check_exits()
+    print()
+
+    # ── Step 2: Scan for new entries ───────────────────────────────────────────
+    log(f"Open positions after exits: {len(get_open_positions())}", "INFO")
+    log("Scanning watchlist for new entries...", "INFO")
 
     for ticker in config.STOCK_WATCHLIST:
         try:
             scan_asset(ticker)
         except Exception as e:
-            log(f"Unexpected error scanning {ticker}: {e}", "ERROR")
+            log(f"Error scanning {ticker}: {e}", "ERROR")
 
     for ticker in config.CRYPTO_WATCHLIST:
         try:
             scan_asset(ticker)
         except Exception as e:
-            log(f"Unexpected error scanning {ticker}: {e}", "ERROR")
+            log(f"Error scanning {ticker}: {e}", "ERROR")
 
     log("Scan cycle complete.", "INFO")
 
 
 def show_summary():
-    summary     = get_performance_summary()
-    open_pos    = get_open_positions()
+    summary  = get_performance_summary()
+    open_pos = get_open_positions()
 
     print(f"\n{c('── FRIDAY Performance Summary ──', 'cyan')}")
     for k, v in summary.items():
@@ -186,6 +249,7 @@ def main():
 
     if "--loop" in args:
         log(f"FRIDAY is live. Scanning every {config.SCAN_INTERVAL_MINUTES} minutes.", "INFO")
+        log("Exit logic: Stop-loss and take-profit checked on every cycle.", "INFO")
         run_scan_cycle()
         schedule.every(config.SCAN_INTERVAL_MINUTES).minutes.do(run_scan_cycle)
         while True:
