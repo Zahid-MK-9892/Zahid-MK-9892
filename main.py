@@ -1,11 +1,12 @@
 """
 main.py — FRIDAY: AI Swing Trading Bot
-Entry point. Runs the scan loop on a schedule.
+Full market scanner mode — analyses entire S&P 500 + crypto universe.
 
 Usage:
-    python main.py              # Run once immediately
-    python main.py --loop       # Run every N minutes (set in config.py)
+    python main.py              # Single scan run
+    python main.py --loop       # Run every N minutes continuously
     python main.py --summary    # Show performance summary
+    python main.py --watchlist  # Use fixed watchlist instead of full scan
 """
 
 import sys
@@ -23,6 +24,7 @@ except ImportError:
 import config
 from data.market_data import get_stock_data, get_crypto_data
 from data.news_fetcher import get_news, format_news_for_prompt
+from data.market_scanner import run_market_scan
 from analysis.ai_engine import analyze_asset
 from trading.risk_manager import approve_trade, calculate_position
 from trading.executor import execute_trade
@@ -34,206 +36,230 @@ from trading.journal import (
 
 
 def c(text, color):
-    if not USE_COLOR:
-        return text
-    colors = {
-        "cyan":   Fore.CYAN,   "green":  Fore.GREEN,
-        "yellow": Fore.YELLOW, "red":    Fore.RED,
-        "white":  Fore.WHITE,  "dim":    Fore.LIGHTBLACK_EX,
-    }
-    return f"{colors.get(color,'')}{text}{Style.RESET_ALL}"
+    if not USE_COLOR: return text
+    cols = {"cyan":Fore.CYAN,"green":Fore.GREEN,"yellow":Fore.YELLOW,
+            "red":Fore.RED,"white":Fore.WHITE,"dim":Fore.LIGHTBLACK_EX,
+            "magenta":Fore.MAGENTA}
+    return f"{cols.get(color,'')}{text}{Style.RESET_ALL}"
 
 
 def banner():
-    mode = "MOCK SIMULATION" if config.MOCK_MODE else "PAPER TRADING"
+    mode = "MOCK" if config.MOCK_MODE else "PAPER TRADING"
+    scan = "FULL MARKET SCAN" if config.MARKET_SCAN_ENABLED else "WATCHLIST"
     print(f"""
-{c('╔══════════════════════════════════════════════╗', 'cyan')}
-{c('║   F.R.I.D.A.Y  —  AI Swing Trading Bot      ║', 'cyan')}
-{c(f'║   Mode: {mode:<37}║', 'cyan')}
-{c('╚══════════════════════════════════════════════╝', 'cyan')}
+{c('╔══════════════════════════════════════════════════╗','cyan')}
+{c('║   F.R.I.D.A.Y  —  AI Swing Trading Bot          ║','cyan')}
+{c(f'║   Mode: {mode:<43}║','cyan')}
+{c(f'║   Scanner: {scan:<41}║','cyan')}
+{c('╚══════════════════════════════════════════════════╝','cyan')}
 """)
 
 
 def log(msg, level="INFO"):
     ts = datetime.now().strftime("%H:%M:%S")
-    level_colors = {
-        "INFO":  "white",  "BUY":    "green",
-        "HOLD":  "yellow", "SKIP":   "yellow",
-        "ERROR": "red",    "TRADE":  "cyan",
-        "CLOSE": "cyan",   "WIN":    "green",
-        "LOSS":  "red",
-    }
-    col = level_colors.get(level, "white")
-    print(f"{c(f'[{ts}]', 'dim')} {c(f'[{level}]', col)} {msg}")
+    cols = {"INFO":"white","BUY":"green","HOLD":"yellow","SKIP":"yellow",
+            "ERROR":"red","TRADE":"cyan","WIN":"green","LOSS":"red",
+            "SCAN":"magenta","CLOSE":"cyan"}
+    col = cols.get(level, "white")
+    print(f"{c(f'[{ts}]','dim')} {c(f'[{level}]',col)} {msg}")
 
 
+# ── Exit Check ─────────────────────────────────────────────────────────────────
 def check_exits():
-    """
-    Step 1 of every scan cycle.
-    Automatically closes positions that hit stop-loss or take-profit.
-    """
-    log("Checking open positions for exits...", "INFO")
+    log("Checking open positions for stop-loss / take-profit...", "INFO")
     closed = check_and_close_positions()
 
     if not closed:
-        log("No exits triggered.", "INFO")
+        log("No exits triggered this cycle.", "INFO")
         return
 
-    for c_pos in closed:
-        ticker = c_pos["ticker"]
-        reason = c_pos["exit_reason"]
-        pnl    = c_pos["pnl"]
-        outcome= c_pos["outcome"]
-        entry  = c_pos["entry"]
-        exit_p = c_pos["exit"]
+    for pos in closed:
+        ticker = pos["ticker"]
+        reason = pos["exit_reason"]
+        pnl    = pos["pnl"]
+        entry  = pos["entry"]
+        exit_p = pos["exit"]
 
         if reason == "TAKE_PROFIT":
-            log(
-                f"TAKE PROFIT HIT ✓ | {ticker} | Entry: ${entry} → Exit: ${exit_p} | "
-                f"P&L: +${pnl}", "WIN"
-            )
+            log(f"TAKE PROFIT ✓ | {ticker} | ${entry} → ${exit_p} | P&L: +${pnl}", "WIN")
         else:
-            log(
-                f"STOP LOSS HIT | {ticker} | Entry: ${entry} → Exit: ${exit_p} | "
-                f"P&L: ${pnl}", "LOSS"
-            )
+            log(f"STOP LOSS    | {ticker} | ${entry} → ${exit_p} | P&L: ${pnl}", "LOSS")
 
-        # Send WhatsApp alert on exit
         try:
             from notifications.whatsapp import send_custom_message
             emoji = "🎯" if reason == "TAKE_PROFIT" else "🛑"
             send_custom_message(
-                f"{emoji} *FRIDAY Exit Alert*\n"
-                f"{'TAKE PROFIT' if reason=='TAKE_PROFIT' else 'STOP LOSS'} hit on *{ticker}*\n"
-                f"Entry: ${entry} → Exit: ${exit_p}\n"
-                f"P&L: {'+'if pnl>=0 else ''}${pnl} ({outcome})"
+                f"{emoji} *FRIDAY Exit*\n{'TAKE PROFIT' if reason=='TAKE_PROFIT' else 'STOP LOSS'}"
+                f" — *{ticker}*\nEntry: ${entry} → Exit: ${exit_p}\n"
+                f"P&L: {'+'if pnl>=0 else ''}${pnl}"
             )
         except Exception:
             pass
 
 
-def scan_asset(ticker: str):
-    """Full analysis + trade cycle for one asset."""
-    log(f"Scanning {ticker}...", "INFO")
+# ── Execute a trade from scanner result ────────────────────────────────────────
+def execute_candidate(candidate: dict):
+    """Takes a pre-scored candidate from the market scanner and executes the trade."""
+    ticker   = candidate["ticker"]
+    analysis = candidate["analysis"]
+    price    = candidate["price"]
 
-    # 1. Market data
-    is_crypto   = "/" in ticker or ticker.endswith("-USD")
-    market_data = get_crypto_data(ticker) if is_crypto else get_stock_data(ticker)
-
-    if "error" in market_data:
-        log(f"{ticker} data error: {market_data['error']}", "ERROR")
-        return
-
-    price = market_data.get("price", 0)
-    rsi   = market_data.get("rsi", "N/A")
-    log(f"{ticker} | Price: ${price} | RSI: {rsi}", "INFO")
-
-    # 2. News
-    articles  = get_news(ticker)
-    news_text = format_news_for_prompt(articles)
-
-    # 3. Analysis
-    analysis = analyze_asset(ticker, market_data, news_text)
-    action   = analysis.get("action", "HOLD")
-    conf     = analysis.get("confidence", 0)
-    source   = analysis.get("source", "unknown")
-    reason   = analysis.get("reasoning", "")
-    score    = analysis.get("score", "N/A")
-    src_label= "Claude AI" if source == "claude_ai" else f"Rule-based (score:{score})"
-
-    log_scan(ticker, price, analysis)
-
-    level = "BUY" if action == "BUY" else "HOLD"
-    log(f"{ticker} → {action} (conf:{conf}% | {src_label}) | {reason[:80]}...", level)
+    log(f"Executing candidate: {ticker} | Score:{candidate['score']} | "
+        f"Conf:{candidate['confidence']}% | {candidate['sentiment']}", "TRADE")
 
     if analysis.get("key_signals"):
-        log(f"  Signals: {' · '.join(analysis['key_signals'])}", "INFO")
+        log(f"  Signals: {' · '.join(analysis['key_signals'][:3])}", "INFO")
 
-    # 4. Risk check
     open_positions = get_open_positions()
-    approved, reason_str = approve_trade(analysis, market_data, open_positions)
+    approved, reason = approve_trade(analysis, candidate, open_positions)
 
     if not approved:
-        log(f"{ticker} skipped: {reason_str}", "SKIP")
+        log(f"{ticker} skipped: {reason}", "SKIP")
         return
 
-    # 5. Position sizing
     position = calculate_position(price, analysis)
     log(
-        f"{ticker} → {position['shares']} shares @ ${price} | "
+        f"{ticker} | {position['size_label']} | {position['shares']} shares @ ${price} | "
         f"SL: ${position['stop_loss']} | TP: ${position['take_profit']} | "
-        f"R/R: {position['risk_reward_ratio']}x",
+        f"Risk: ${position['max_dollar_risk']} | R/R: {position['risk_reward_ratio']}x",
         "TRADE"
     )
 
-    # 6. Execute
+    # Log the scan
+    log_scan(ticker, price, analysis)
+
     order = execute_trade(ticker, position)
 
     if order.get("status") in ("SUBMITTED", "MOCK_SUBMITTED"):
         log(
             f"ORDER PLACED ✓ | {ticker} | ID: {order['order_id']} | "
-            f"Cost: ${position['total_cost']}",
+            f"Cost: ${position['total_cost']} | Broker: {order['broker']}",
             "BUY"
         )
         log_trade(order, analysis)
 
-        # WhatsApp alert on entry
         try:
             from notifications.whatsapp import send_trade_alert
             send_trade_alert(order, analysis, position)
         except Exception:
             pass
     else:
-        log(f"Order failed for {ticker}: {order.get('error', 'unknown')}", "ERROR")
+        log(f"Order failed for {ticker}: {order.get('error','unknown')}", "ERROR")
 
 
+# ── Watchlist scan (fallback) ──────────────────────────────────────────────────
+def scan_watchlist():
+    """Scans fixed watchlist when MARKET_SCAN_ENABLED=false."""
+    all_tickers = config.STOCK_WATCHLIST + config.CRYPTO_WATCHLIST
+
+    for ticker in all_tickers:
+        try:
+            log(f"Scanning {ticker}...", "INFO")
+            is_crypto   = "/" in ticker or ticker.endswith("-USD")
+            market_data = get_crypto_data(ticker) if is_crypto else get_stock_data(ticker)
+
+            if "error" in market_data:
+                log(f"{ticker} error: {market_data['error']}", "ERROR")
+                continue
+
+            price = market_data.get("price", 0)
+            rsi   = market_data.get("rsi", "N/A")
+            log(f"{ticker} | Price: ${price} | RSI: {rsi}", "INFO")
+
+            news     = get_news(ticker)
+            news_txt = format_news_for_prompt(news)
+            analysis = analyze_asset(ticker, market_data, news_txt)
+
+            log_scan(ticker, price, analysis)
+
+            action = analysis.get("action","HOLD")
+            conf   = analysis.get("confidence",0)
+            score  = analysis.get("score","N/A")
+            log(f"{ticker} → {action} (conf:{conf}% score:{score})", action if action=="BUY" else "HOLD")
+
+            if action == "BUY":
+                open_positions = get_open_positions()
+                approved, reason = approve_trade(analysis, market_data, open_positions)
+                if not approved:
+                    log(f"{ticker} skipped: {reason}", "SKIP")
+                    continue
+
+                position = calculate_position(price, analysis)
+                log(f"{ticker} | {position['shares']}sh @ ${price} | "
+                    f"SL:${position['stop_loss']} TP:${position['take_profit']}", "TRADE")
+
+                order = execute_trade(ticker, position)
+                if order.get("status") in ("SUBMITTED","MOCK_SUBMITTED"):
+                    log(f"ORDER PLACED ✓ | {ticker} | {order['order_id']}", "BUY")
+                    log_trade(order, analysis)
+
+        except Exception as e:
+            log(f"Error on {ticker}: {e}", "ERROR")
+
+
+# ── Main scan cycle ────────────────────────────────────────────────────────────
 def run_scan_cycle():
-    """Full scan cycle: exits first, then new entries."""
     print()
-    log(f"{'='*50}", "INFO")
-    log(f"Scan cycle — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "INFO")
-    log(f"{'='*50}", "INFO")
+    log("═"*55, "INFO")
+    log(f"FRIDAY Scan Cycle — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "SCAN")
+    log("═"*55, "INFO")
 
-    # ── Step 1: Check exits on all open positions ──────────────────────────────
+    # Step 1: Exit check
     check_exits()
     print()
 
-    # ── Step 2: Scan for new entries ───────────────────────────────────────────
-    log(f"Open positions after exits: {len(get_open_positions())}", "INFO")
-    log("Scanning watchlist for new entries...", "INFO")
+    open_positions = get_open_positions()
+    log(f"Open positions: {len(open_positions)} / {config.SCAN_MAX_NEW_TRADES+len(open_positions)} slots", "INFO")
 
-    for ticker in config.STOCK_WATCHLIST:
-        try:
-            scan_asset(ticker)
-        except Exception as e:
-            log(f"Error scanning {ticker}: {e}", "ERROR")
+    # Step 2: Scan for entries
+    if config.MARKET_SCAN_ENABLED:
+        log("Mode: FULL MARKET SCAN — scanning S&P 500 + crypto universe", "SCAN")
+        candidates = run_market_scan(
+            open_positions=open_positions,
+            include_crypto=config.SCAN_INCLUDE_CRYPTO,
+            max_candidates=config.SCAN_MAX_CANDIDATES,
+            max_new_trades=config.SCAN_MAX_NEW_TRADES,
+        )
+        print()
+        if candidates:
+            log(f"Executing {len(candidates)} selected trade candidates...", "SCAN")
+            for candidate in candidates:
+                execute_candidate(candidate)
+        else:
+            log("No high-conviction trades found this cycle. Holding cash.", "INFO")
+    else:
+        log("Mode: WATCHLIST — scanning fixed tickers", "SCAN")
+        scan_watchlist()
 
-    for ticker in config.CRYPTO_WATCHLIST:
-        try:
-            scan_asset(ticker)
-        except Exception as e:
-            log(f"Error scanning {ticker}: {e}", "ERROR")
-
+    print()
     log("Scan cycle complete.", "INFO")
+    show_summary_inline()
+
+
+def show_summary_inline():
+    summary = get_performance_summary()
+    pos     = get_open_positions()
+
+    print()
+    log(f"── Performance: {summary.get('total_trades',0)} trades | "
+        f"Win rate: {summary.get('win_rate',0)}% | "
+        f"P&L: ${summary.get('total_pnl',0)}", "INFO")
+    if pos:
+        log(f"── Open: {', '.join(p['ticker'] for p in pos)}", "INFO")
 
 
 def show_summary():
-    summary  = get_performance_summary()
-    open_pos = get_open_positions()
+    summary = get_performance_summary()
+    pos     = get_open_positions()
 
-    print(f"\n{c('── FRIDAY Performance Summary ──', 'cyan')}")
-    for k, v in summary.items():
+    print(f"\n{c('── FRIDAY Performance ──','cyan')}")
+    for k,v in summary.items():
         print(f"  {k}: {v}")
 
-    print(f"\n{c(f'── Open Positions ({len(open_pos)}) ──', 'cyan')}")
-    if open_pos:
-        for p in open_pos:
-            print(
-                f"  {p['ticker']} | {p['shares']} shares @ ${p['entry_price']} "
-                f"| SL: ${p['stop_loss']} | TP: ${p['take_profit']} | {p['broker']}"
-            )
-    else:
-        print("  No open positions.")
+    print(f"\n{c(f'── Open Positions ({len(pos)}) ──','cyan')}")
+    for p in pos:
+        print(f"  {p['ticker']:<12} {p['shares']}sh @ ${p['entry_price']}"
+              f" | SL:${p['stop_loss']} TP:${p['take_profit']} | {p['broker']}")
     print()
 
 
@@ -247,9 +273,11 @@ def main():
         show_summary()
         return
 
+    if "--watchlist" in args:
+        config.MARKET_SCAN_ENABLED = False
+
     if "--loop" in args:
-        log(f"FRIDAY is live. Scanning every {config.SCAN_INTERVAL_MINUTES} minutes.", "INFO")
-        log("Exit logic: Stop-loss and take-profit checked on every cycle.", "INFO")
+        log(f"FRIDAY running. Full scan every {config.SCAN_INTERVAL_MINUTES} min.", "INFO")
         run_scan_cycle()
         schedule.every(config.SCAN_INTERVAL_MINUTES).minutes.do(run_scan_cycle)
         while True:

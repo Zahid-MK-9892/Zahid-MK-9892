@@ -117,6 +117,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .bt-card{background:var(--bg3);border-radius:var(--r2);padding:14px}
 .bt-label{font-size:11px;color:var(--muted);margin-bottom:4px}
 .bt-val{font-size:20px;font-weight:700}
+.active-filter { border-color: var(--accent) !important; color: var(--accent2) !important; }
 /* ── Empty ── */
 .empty{text-align:center;padding:36px;color:var(--muted);font-size:13px}
 /* ── Toast ── */
@@ -148,11 +149,12 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <div class="nav-item" data-page="positions"><span class="nav-icon">💼</span>Positions</div>
     <div class="nav-item" data-page="charts"><span class="nav-icon">📈</span>Charts</div>
     <div class="nav-item" data-page="scan"><span class="nav-icon">🔍</span>Scan & Trade</div>
+    <div class="nav-item" data-page="history"><span class="nav-icon">📜</span>Trade History</div>
     <div class="nav-item" data-page="backtest"><span class="nav-icon">🧪</span>Backtest</div>
     <div class="nav-item" data-page="chat"><span class="nav-icon">💬</span>Chat with FRIDAY</div>
     <div class="nav-item" data-page="alerts"><span class="nav-icon">🔔</span>WhatsApp Alerts</div>
     <div class="nav-item" data-page="settings"><span class="nav-icon">⚙️</span>Settings</div>
-    <div class="nav-item" data-page="logs"><span class="nav-icon">📋</span>Logs</div>
+        <div class="nav-item" data-page="logs"><span class="nav-icon">📋</span>Logs</div>
   </div>
   <div class="sb-bottom">
     <div class="status-dot" id="sb-dot"></div>
@@ -169,10 +171,26 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <div id="dash-status-pill" class="idle-pill">⬤ Idle</div>
   </div>
   <div class="grid-4">
-    <div class="card"><div class="card-label">Total P&L</div><div class="card-val" id="d-pnl">$0.00</div><div class="card-sub" id="d-trades">0 closed trades</div></div>
-    <div class="card"><div class="card-label">Win Rate</div><div class="card-val cyan" id="d-wr">0%</div><div class="card-sub" id="d-wl">0W / 0L</div></div>
-    <div class="card"><div class="card-label">Open Positions</div><div class="card-val amber" id="d-open">0</div><div class="card-sub" id="d-upnl">Unrealised P&L: $0.00</div></div>
-    <div class="card"><div class="card-label">Mode</div><div class="card-val" id="d-mode" style="font-size:18px">—</div><div class="card-sub" id="d-interval">Every — min</div></div>
+    <div class="card">
+      <div class="card-label">Realised P&L</div>
+      <div class="card-val" id="d-pnl">$0.00</div>
+      <div class="card-sub" id="d-trades">From closed trades only</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Unrealised P&L</div>
+      <div class="card-val" id="d-upnl">+$0.00</div>
+      <div class="card-sub" id="d-open-sub">On 0 open positions</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Win Rate</div>
+      <div class="card-val cyan" id="d-wr">0%</div>
+      <div class="card-sub" id="d-wl">0W / 0L closed</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Open Positions</div>
+      <div class="card-val amber" id="d-open">0</div>
+      <div class="card-sub" id="d-mode-sub">Mode: —  |  Every — min</div>
+    </div>
   </div>
   <div class="grid-2">
     <div class="card">
@@ -191,7 +209,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <div id="page-positions" class="page">
   <div class="ph">
     <div><div class="ph-title">Open Positions</div><div class="ph-sub">Live P&L updates every 30 seconds</div></div>
-    <button class="btn btn-outline" onclick="loadPositions()">↻ Refresh</button>
+    <button class="btn btn-outline" onclick="loadPositions().then(()=>toast('Positions refreshed!'))">↻ Refresh</button>
   </div>
   <div class="card">
     <div class="tbl-wrap" id="pos-table"><div class="empty">No open positions.</div></div>
@@ -209,6 +227,10 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <option value="3mo" selected>3 Months</option>
         <option value="6mo">6 Months</option>
         <option value="1y">1 Year</option>
+        <option value="2y">2 Years</option>
+        <option value="5y">5 Years</option>
+        <option value="10y">10 Years</option>
+        <option value="max">Max (all history)</option>
       </select>
       <button class="btn btn-primary" onclick="loadChart()">Load Chart</button>
     </div>
@@ -239,6 +261,33 @@ tr:hover td{background:rgba(255,255,255,.02)}
   </div>
 </div>
 
+<!-- ══ TRADE HISTORY ══ -->
+<div id="page-history" class="page">
+  <div class="ph">
+    <div><div class="ph-title">Trade History</div><div class="ph-sub">Every trade FRIDAY has opened and closed — your full audit trail</div></div>
+    <button class="btn btn-outline" onclick="loadHistory()">↻ Refresh</button>
+  </div>
+
+  <div class="grid-4" id="hist-stats-grid" style="margin-bottom:20px"></div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="sec-title">All Trades (Open + Closed)</div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" onclick="filterHistory('all')" id="hf-all">All</button>
+      <button class="btn btn-outline btn-sm" onclick="filterHistory('open')" id="hf-open">Open</button>
+      <button class="btn btn-outline btn-sm" onclick="filterHistory('win')" id="hf-win">Wins</button>
+      <button class="btn btn-outline btn-sm" onclick="filterHistory('loss')" id="hf-loss">Losses</button>
+      <button class="btn btn-outline btn-sm" onclick="filterHistory('auto')" id="hf-auto">Auto-closed</button>
+    </div>
+    <div class="tbl-wrap" id="hist-table"><div class="empty">Loading trade history...</div></div>
+  </div>
+
+  <div class="card">
+    <div class="sec-title">Recent Market Scans — what FRIDAY was thinking</div>
+    <div class="tbl-wrap" id="scans-table"><div class="empty">Loading scan history...</div></div>
+  </div>
+</div>
+
 <!-- ══ BACKTEST ══ -->
 <div id="page-backtest" class="page">
   <div class="ph"><div><div class="ph-title">Backtest</div><div class="ph-sub">Test FRIDAY's strategy on historical data</div></div></div>
@@ -252,6 +301,9 @@ tr:hover td{background:rgba(255,255,255,.02)}
           <option value="6mo">6 Months</option>
           <option value="1y" selected>1 Year</option>
           <option value="2y">2 Years</option>
+          <option value="5y">5 Years</option>
+          <option value="10y">10 Years</option>
+          <option value="max">Max (all history)</option>
         </select>
       </div>
       <div class="fg"><label>Stop Loss (%)</label><input id="bt-sl" type="number" value="5" min="1" max="20"></div>
@@ -358,6 +410,18 @@ tr:hover td{background:rgba(255,255,255,.02)}
   </div>
 </div>
 
+<!-- ══ TRADE HISTORY ══ -->
+<div id="page-history" class="page">
+  <div class="ph">
+    <div><div class="ph-title">Trade History</div><div class="ph-sub">All closed trades with P&amp;L — auto-closed by stop-loss or take-profit</div></div>
+    <button class="btn btn-outline" onclick="loadHistory()">↻ Refresh</button>
+  </div>
+  <div class="grid-3" id="history-stats" style="margin-bottom:18px"></div>
+  <div class="card">
+    <div class="tbl-wrap" id="history-table"><div class="empty">No closed trades yet. FRIDAY will close positions automatically when stop-loss or take-profit is hit.</div></div>
+  </div>
+</div>
+
 <!-- ══ LOGS ══ -->
 <div id="page-logs" class="page">
   <div class="ph">
@@ -387,7 +451,7 @@ document.querySelectorAll('.nav-item').forEach(el => {
     const pg = el.dataset.page;
     document.getElementById('page-' + pg).classList.add('active');
     if (pg === 'positions') loadPositions();
-    if (pg === 'logs') loadLogs();
+    if (pg === 'history') loadHistory();
     if (pg === 'charts') initChartSelectors();
     if (pg === 'alerts') checkWaConfig();
     if (pg === 'scan') updateScanCards();
@@ -426,16 +490,17 @@ async function loadDashboard() {
   const pnl = perf.total_pnl ?? 0;
   document.getElementById('d-pnl').textContent = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2);
   document.getElementById('d-pnl').className = 'card-val ' + (pnl >= 0 ? 'green' : 'red');
-  document.getElementById('d-trades').textContent = (perf.total_trades || 0) + ' closed trades';
+  document.getElementById('d-trades').textContent = (perf.total_trades || 0) + ' closed trade' + ((perf.total_trades||0)===1?'':'s');
   document.getElementById('d-wr').textContent = (perf.win_rate || 0) + '%';
-  document.getElementById('d-wl').textContent = `${perf.wins||0}W / ${perf.losses||0}L`;
+  document.getElementById('d-wl').textContent = `${perf.wins||0}W / ${perf.losses||0}L closed`;
   document.getElementById('d-open').textContent = pos.length || 0;
 
   const totalUnreal = pos.reduce((s,p) => s + (p.unrealized_pnl||0), 0);
-  document.getElementById('d-upnl').textContent = 'Unrealised: ' + (totalUnreal>=0?'+$':'-$') + Math.abs(totalUnreal).toFixed(2);
-
-  document.getElementById('d-mode').textContent = status.mock_mode ? '🧪 Mock' : '📄 Paper';
-  document.getElementById('d-interval').textContent = `Every ${status.scan_interval} min`;
+  const unrealEl = document.getElementById('d-upnl');
+  unrealEl.textContent = (totalUnreal >= 0 ? '+$' : '-$') + Math.abs(totalUnreal).toFixed(2);
+  unrealEl.className = 'card-val ' + (totalUnreal >= 0 ? 'green' : 'red');
+  document.getElementById('d-open-sub').textContent = `On ${pos.length} open position${pos.length===1?'':'s'}`;
+  document.getElementById('d-mode-sub').textContent = `${S.mock_mode?'🧪 Mock':'📄 Paper'}  |  Every ${S.scan_interval} min`;
 
   renderChips('dash-stocks', stockList, false);
   renderChips('dash-crypto', cryptoList, false);
@@ -458,7 +523,11 @@ async function loadDashboard() {
 // ── Positions table ────────────────────────────────────────────────────────────
 async function loadPositions() {
   const pos = await api('/api/positions');
-  renderPosTable('pos-table', pos, false);
+  if (pos && pos.error) {
+    document.getElementById('pos-table').innerHTML = '<div class="empty">Could not load positions. Is the backend running?</div>';
+    return;
+  }
+  renderPosTable('pos-table', pos || [], false);
 }
 
 function renderPosTable(id, pos, mini) {
@@ -497,12 +566,42 @@ async function closePos(id, ticker) {
 }
 
 // ── Charts ─────────────────────────────────────────────────────────────────────
+const STOCK_UNIVERSE = [
+  "AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA","AVGO","ORCL","ADBE",
+  "CRM","AMD","INTC","QCOM","TXN","IBM","INTU","NOW","SNOW","PLTR","PANW",
+  "CRWD","NET","ZS","COIN","JPM","BAC","WFC","GS","MS","C","BLK","AXP",
+  "V","MA","SPGI","UNH","JNJ","LLY","ABBV","MRK","PFE","AMGN","GILD",
+  "VRTX","REGN","ISRG","MDT","HD","MCD","SBUX","NKE","TGT","COST","WMT",
+  "PG","KO","PEP","PM","XOM","CVX","SLB","EOG","COP","PLD","HON","CAT",
+  "DE","RTX","GE","ETN","EMR","ITW","NSC","UPS","FDX","BRK-B","ACN","TMO",
+  "DHR","LIN","NEE","SO","DUK","CB","MMC","ADP","CME","MSCI","MELI","DDOG"
+];
+const CRYPTO_UNIVERSE = [
+  "BTC-USD","ETH-USD","BNB-USD","SOL-USD","ADA-USD",
+  "AVAX-USD","DOT-USD","LINK-USD","XRP-USD","LTC-USD",
+  "BCH-USD","ALGO-USD","ATOM-USD","FIL-USD","NEAR-USD"
+];
+
 function initChartSelectors() {
   const sel = document.getElementById('chart-ticker');
   if (sel.options.length > 0) return;
-  [...(S.stock_watchlist||[]), ...(S.crypto_watchlist||[])].forEach(t => {
-    const o = document.createElement('option'); o.value = t; o.textContent = t; sel.appendChild(o);
+
+  // Stocks group
+  const sg = document.createElement('optgroup');
+  sg.label = '── Stocks (S&P 500)';
+  STOCK_UNIVERSE.forEach(t => {
+    const o = document.createElement('option'); o.value = t; o.textContent = t; sg.appendChild(o);
   });
+  sel.appendChild(sg);
+
+  // Crypto group
+  const cg = document.createElement('optgroup');
+  cg.label = '── Crypto';
+  CRYPTO_UNIVERSE.forEach(t => {
+    const o = document.createElement('option'); o.value = t; o.textContent = t; cg.appendChild(o);
+  });
+  sel.appendChild(cg);
+
   loadChart();
 }
 
@@ -766,6 +865,59 @@ function removeChip(type, ticker) {
   else cryptoList=cryptoList.filter(t=>t!==ticker),renderChips('s-crypto',cryptoList,true,'crypto');
 }
 
+
+// ── Trade History ──────────────────────────────────────────────────────────────
+async function loadHistory() {
+  const trades = await api('/api/trade-history');
+  const statsEl = document.getElementById('history-stats');
+  const tableEl = document.getElementById('history-table');
+
+  if (!trades || !trades.length) {
+    statsEl.innerHTML = '';
+    tableEl.innerHTML = '<div class="empty">No closed trades yet. FRIDAY closes positions automatically when stop-loss or take-profit is hit. Keep the bot running with python main.py --loop</div>';
+    return;
+  }
+
+  const wins    = trades.filter(t => t.outcome === 'WIN');
+  const losses  = trades.filter(t => t.outcome === 'LOSS');
+  const totalPnl = trades.reduce((s,t) => s + (t.pnl||0), 0);
+  const winRate  = trades.length ? Math.round(wins.length/trades.length*100) : 0;
+  const avgWin   = wins.length ? wins.reduce((s,t)=>s+(t.pnl||0),0)/wins.length : 0;
+  const avgLoss  = losses.length ? losses.reduce((s,t)=>s+(t.pnl||0),0)/losses.length : 0;
+
+  statsEl.innerHTML = `
+    <div class="card"><div class="card-label">Total closed trades</div><div class="card-val">${trades.length}</div><div class="card-sub">${wins.length}W / ${losses.length}L</div></div>
+    <div class="card"><div class="card-label">Win rate</div><div class="card-val cyan">${winRate}%</div><div class="card-sub">Across all closed trades</div></div>
+    <div class="card"><div class="card-label">Total realised P&L</div><div class="card-val ${totalPnl>=0?'green':'red'}">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</div><div class="card-sub">Avg win: $${avgWin.toFixed(2)} | Avg loss: $${avgLoss.toFixed(2)}</div></div>
+  `;
+
+  const rows = trades.map(t => {
+    const pnl     = t.pnl || 0;
+    const pnlPct  = t.pnl_pct || 0;
+    const outcome = t.outcome || 'OPEN';
+    const badgeCls= outcome==='WIN'?'badge-green':outcome==='LOSS'?'badge-red':'badge-amber';
+    const reason  = t.status === 'CLOSED' ? (pnl >= 0 ? 'Take profit' : 'Stop loss') : t.status;
+    return `<tr>
+      <td>${(t.opened_at||'').slice(0,16).replace('T',' ')}</td>
+      <td><strong>${t.ticker}</strong></td>
+      <td><span class="badge ${t.asset_type==='CRYPTO'?'badge-purple':'badge-cyan'}">${t.asset_type||'STOCK'}</span></td>
+      <td>$${t.entry_price}</td>
+      <td>$${t.exit_price||'—'}</td>
+      <td class="${pnl>=0?'green':'red'}">${pnl>=0?'+':''}$${pnl.toFixed(2)} <span style="font-size:11px;opacity:.7">(${pnlPct>=0?'+':''}${pnlPct.toFixed(1)}%)</span></td>
+      <td style="font-size:12px;color:var(--muted)">${reason}</td>
+      <td><span class="badge ${badgeCls}">${outcome}</span></td>
+    </tr>`;
+  }).join('');
+
+  tableEl.innerHTML = `<table>
+    <thead><tr>
+      <th>Opened</th><th>Ticker</th><th>Type</th>
+      <th>Entry</th><th>Exit</th><th>P&L</th><th>Reason</th><th>Result</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
 // ── Logs ───────────────────────────────────────────────────────────────────────
 async function loadLogs() {
   const logs = await api('/api/logs');
@@ -774,6 +926,110 @@ async function loadLogs() {
   box.innerHTML = [...logs].reverse().map(l =>
     `<div class="log-line"><span class="t">${l.time}</span><span class="m">${l.msg}</span></div>`
   ).join('');
+}
+
+// ── Trade History ──────────────────────────────────────────────────────────────
+let _allTrades = [];
+
+async function loadHistory() {
+  const [trades, scans, perf] = await Promise.all([
+    api('/api/trades/all'),
+    api('/api/scans/recent'),
+    api('/api/performance'),
+  ]);
+
+  _allTrades = trades || [];
+
+  // Stats strip
+  const closed = _allTrades.filter(t => t.closed_at);
+  const wins   = closed.filter(t => t.outcome === 'WIN');
+  const losses = closed.filter(t => t.outcome === 'LOSS');
+  const pnl    = closed.reduce((s, t) => s + (t.pnl || 0), 0);
+  const open   = _allTrades.filter(t => !t.closed_at);
+
+  document.getElementById('hist-stats-grid').innerHTML = `
+    <div class="card"><div class="card-label">Total trades</div><div class="card-val">${_allTrades.length}</div><div class="card-sub">${open.length} open · ${closed.length} closed</div></div>
+    <div class="card"><div class="card-label">Win / Loss</div><div class="card-val cyan">${wins.length}W / ${losses.length}L</div><div class="card-sub">Win rate: ${closed.length ? Math.round(wins.length/closed.length*100) : 0}%</div></div>
+    <div class="card"><div class="card-label">Realised P&L</div><div class="card-val ${pnl>=0?'green':'red'}">${pnl>=0?'+':''}$${pnl.toFixed(2)}</div><div class="card-sub">From ${closed.length} closed trades</div></div>
+    <div class="card"><div class="card-label">Avg per trade</div><div class="card-val ${pnl>=0?'green':'red'}">${closed.length?((pnl>=0?'+':'')+'$'+(pnl/closed.length).toFixed(2)):'—'}</div><div class="card-sub">Closed trades only</div></div>
+  `;
+
+  renderHistoryTable(_allTrades);
+  renderScansTable(scans || []);
+}
+
+function filterHistory(type) {
+  ['all','open','win','loss','auto'].forEach(f => {
+    document.getElementById('hf-'+f).className = 'btn btn-outline btn-sm' + (f===type?' active-filter':'');
+  });
+  if (type === 'all')  renderHistoryTable(_allTrades);
+  if (type === 'open') renderHistoryTable(_allTrades.filter(t => !t.closed_at));
+  if (type === 'win')  renderHistoryTable(_allTrades.filter(t => t.outcome === 'WIN'));
+  if (type === 'loss') renderHistoryTable(_allTrades.filter(t => t.outcome === 'LOSS'));
+  if (type === 'auto') renderHistoryTable(_allTrades.filter(t => t.closed_at && t.status === 'CLOSED'));
+}
+
+function renderHistoryTable(trades) {
+  const el = document.getElementById('hist-table');
+  if (!trades.length) { el.innerHTML = '<div class="empty">No trades match this filter.</div>'; return; }
+
+  const rows = trades.map(t => {
+    const isOpen   = !t.closed_at;
+    const pnl      = t.pnl ?? 0;
+    const pnlPct   = t.pnl_pct ?? 0;
+    const pnlClass = pnl >= 0 ? 'green' : 'red';
+    const outcome  = isOpen ? '<span class="badge badge-cyan">OPEN</span>'
+                   : t.outcome === 'WIN'  ? '<span class="badge badge-green">WIN</span>'
+                   : t.outcome === 'LOSS' ? '<span class="badge badge-red">LOSS</span>'
+                   : '<span class="badge badge-gray">BREAK</span>';
+    const exitInfo = isOpen
+      ? '<span style="color:var(--muted)">still open</span>'
+      : `$${t.exit_price} <span style="font-size:11px;opacity:.7">${(t.closed_at||'').slice(0,16).replace('T',' ')}</span>`;
+    const pnlInfo  = isOpen ? '—'
+      : `<span class="${pnlClass}">${pnl>=0?'+':''}$${pnl.toFixed(2)} (${pnlPct>=0?'+':''}${pnlPct.toFixed(1)}%)</span>`;
+    const closeReason = isOpen ? '' : (t.status === 'CLOSED' ? '🤖 Auto' : '👆 Manual');
+
+    return `<tr>
+      <td>${(t.opened_at||'').slice(0,16).replace('T',' ')}</td>
+      <td><strong>${t.ticker}</strong></td>
+      <td><span class="badge ${t.asset_type==='CRYPTO'?'badge-purple':'badge-cyan'}">${t.asset_type||'STOCK'}</span></td>
+      <td>$${t.entry_price}</td>
+      <td>${exitInfo}</td>
+      <td>${pnlInfo}</td>
+      <td style="color:var(--red)">$${t.stop_loss}</td>
+      <td style="color:var(--green)">$${t.take_profit}</td>
+      <td>${outcome}</td>
+      <td style="font-size:11px;color:var(--muted)">${closeReason}</td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `<table><thead><tr>
+    <th>Opened</th><th>Ticker</th><th>Type</th><th>Entry</th>
+    <th>Exit</th><th>P&L</th><th>Stop</th><th>Target</th><th>Result</th><th>How closed</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderScansTable(scans) {
+  const el = document.getElementById('scans-table');
+  if (!scans.length) { el.innerHTML = '<div class="empty">No scans yet.</div>'; return; }
+
+  const rows = scans.map(s => {
+    const actionClass = s.action === 'BUY' ? 'badge-green' : 'badge-gray';
+    const sentClass   = s.sentiment === 'BULLISH' ? 'green' : s.sentiment === 'BEARISH' ? 'red' : 'muted';
+    return `<tr>
+      <td>${(s.timestamp||'').slice(0,16).replace('T',' ')}</td>
+      <td><strong>${s.ticker}</strong></td>
+      <td>$${s.price}</td>
+      <td><span class="badge ${actionClass}">${s.action}</span></td>
+      <td>${s.confidence}%</td>
+      <td class="${sentClass}">${s.sentiment||'—'}</td>
+      <td style="font-size:12px;color:var(--muted);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(s.reasoning||'').slice(0,80)}...</td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `<table><thead><tr>
+    <th>Time</th><th>Ticker</th><th>Price</th><th>Signal</th><th>Confidence</th><th>Sentiment</th><th>Reasoning</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────

@@ -1,46 +1,76 @@
 """
 trading/position_manager.py — Automatic position exit manager.
-Runs on every scan cycle and closes positions that hit SL or TP.
+Uses real-time quotes (not daily candles) to check stop-loss / take-profit.
 """
 
 from datetime import datetime
 from trading.journal import get_open_positions, close_position
-from data.market_data import get_stock_data, get_crypto_data
+
+
+def _get_realtime_price(ticker: str) -> float:
+    """
+    Fetches the latest real-time price using yfinance fast_info.
+    Falls back to daily data if fast_info fails.
+    """
+    try:
+        import yfinance as yf
+        # Handle crypto ticker format
+        yf_sym = ticker.replace("/USDT", "-USD").replace("/BTC", "-BTC").replace("/", "-")
+        t = yf.Ticker(yf_sym)
+
+        # Try fast_info first (real-time, no rate limit issues)
+        try:
+            price = t.fast_info.get("last_price") or t.fast_info.get("regularMarketPrice")
+            if price and float(price) > 0:
+                return float(round(price, 4))
+        except Exception:
+            pass
+
+        # Fallback: latest daily close
+        import pandas as pd
+        df = t.history(period="2d", interval="1d")
+        if df is None or df.empty:
+            return 0.0
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        return float(df["Close"].squeeze().iloc[-1])
+
+    except Exception as e:
+        print(f"[EXIT] Price fetch failed for {ticker}: {e}")
+        return 0.0
 
 
 def check_and_close_positions() -> list:
     """
     Called every scan cycle.
-    Checks every open position against current price.
+    Checks every open position against real-time price.
     Closes automatically if stop-loss or take-profit is hit.
-    Returns list of closed position summaries.
     """
     open_positions = get_open_positions()
     closed = []
 
     for pos in open_positions:
-        ticker     = pos.get("ticker", "")
-        entry      = float(pos.get("entry_price") or 0)
-        stop_loss  = float(pos.get("stop_loss") or 0)
-        take_profit= float(pos.get("take_profit") or 0)
-        shares     = float(pos.get("shares") or 0)
-        trade_id   = pos.get("id")
+        ticker      = pos.get("ticker", "")
+        entry       = float(pos.get("entry_price") or 0)
+        stop_loss   = float(pos.get("stop_loss") or 0)
+        take_profit = float(pos.get("take_profit") or 0)
+        shares      = float(pos.get("shares") or 0)
+        trade_id    = pos.get("id")
 
         if not ticker or not entry or not stop_loss or not take_profit:
             continue
 
-        # Fetch current price
-        current = _get_current_price(ticker)
+        current = _get_realtime_price(ticker)
         if not current or current <= 0:
+            print(f"[EXIT] Could not get price for {ticker}, skipping")
             continue
 
-        exit_reason = None
+        print(f"[EXIT] {ticker} | Entry: ${entry} | Current: ${current} | "
+              f"SL: ${stop_loss} | TP: ${take_profit}")
 
-        # Check stop-loss
+        exit_reason = None
         if current <= stop_loss:
             exit_reason = "STOP_LOSS"
-
-        # Check take-profit
         elif current >= take_profit:
             exit_reason = "TAKE_PROFIT"
 
@@ -49,7 +79,7 @@ def check_and_close_positions() -> list:
             pnl    = result.get("pnl", 0) if result else 0
             outcome= result.get("outcome", "?") if result else "?"
 
-            summary = {
+            closed.append({
                 "ticker":      ticker,
                 "exit_reason": exit_reason,
                 "entry":       entry,
@@ -58,36 +88,15 @@ def check_and_close_positions() -> list:
                 "outcome":     outcome,
                 "shares":      shares,
                 "timestamp":   datetime.now().isoformat(),
-            }
-            closed.append(summary)
+            })
 
-            # Also close on broker if Alpaca
             _close_on_broker(pos, current)
 
     return closed
 
 
-def _get_current_price(ticker: str) -> float:
-    """Fetch latest price for any ticker."""
-    try:
-        is_crypto = "/" in ticker or ticker.endswith("-USD")
-        if is_crypto:
-            data = get_crypto_data(ticker)
-        else:
-            data = get_stock_data(ticker, period="5d", interval="1d")
-
-        if "error" not in data and data.get("price"):
-            return float(data["price"])
-    except Exception:
-        pass
-    return 0.0
-
-
 def _close_on_broker(pos: dict, exit_price: float):
-    """
-    Attempt to close the position on the actual broker (Alpaca).
-    Silently ignores errors — journal is the source of truth.
-    """
+    """Attempt to close on Alpaca. Silently ignores errors."""
     try:
         import config as cfg
         if cfg.MOCK_MODE:

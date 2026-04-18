@@ -4,4 +4,7 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
-friday_journal.db
+friday_journal.db".env" 
+"*.db" 
+"__pycache__/" 
+"*.pyc" 

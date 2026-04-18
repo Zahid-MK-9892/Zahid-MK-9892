@@ -141,6 +141,38 @@ def close_position(trade_id: int, exit_price: float):
     return {"pnl": pnl, "pnl_pct": pnl_pct, "outcome": outcome}
 
 
+def get_closed_trades(limit: int = 100) -> list:
+    """Returns all closed trades, most recent first."""
+    with _get_conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM trades
+               WHERE closed_at IS NOT NULL
+               ORDER BY closed_at DESC LIMIT ?""",
+            (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_all_trades(limit: int = 200) -> list:
+    """Returns ALL trades (open + closed), most recent first."""
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM trades ORDER BY opened_at DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_recent_scans(limit: int = 50) -> list:
+    """Returns the most recent scan decisions (BUY/HOLD signals)."""
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM scans ORDER BY timestamp DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_performance_summary() -> dict:
     """Returns key performance stats from the trade journal."""
     with _get_conn() as conn:
@@ -165,3 +197,37 @@ def get_performance_summary() -> dict:
             "total_pnl": round(total_pnl, 2),
             "avg_pnl_per_trade": round(total_pnl / total, 2),
         }
+
+
+def get_closed_trades(limit: int = 50) -> list:
+    """Returns the most recent closed trades for the history page."""
+    with _get_conn() as conn:
+        rows = conn.execute("""
+            SELECT * FROM trades
+            WHERE closed_at IS NOT NULL
+            ORDER BY closed_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_all_trades(limit: int = 100) -> list:
+    """Returns all trades (open + closed) for the full history view."""
+    with _get_conn() as conn:
+        rows = conn.execute("""
+            SELECT * FROM trades
+            ORDER BY opened_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_recent_scans(limit: int = 50) -> list:
+    """Returns recent scan decisions for the Trade History page."""
+    with _get_conn() as conn:
+        rows = conn.execute("""
+            SELECT * FROM scans
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]

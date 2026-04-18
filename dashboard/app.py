@@ -42,11 +42,10 @@ def _current_price(ticker: str) -> float:
     try:
         import yfinance as yf
         yf_sym = ticker.replace("/USDT", "-USD").replace("/BTC", "-BTC").replace("/", "-")
-        data = yf.download(yf_sym, period="2d", interval="1d", progress=False, auto_adjust=True)
-        if not data.empty:
-            if isinstance(data.columns, __import__("pandas").MultiIndex):
-                data.columns = data.columns.get_level_values(0)
-            price = float(data["Close"].squeeze().iloc[-1])
+        tk   = yf.Ticker(yf_sym)
+        hist = tk.history(period="3d", auto_adjust=True)
+        if hist is not None and not hist.empty:
+            price = float(hist["Close"].iloc[-1])
             _price_cache[ticker] = price
             _price_ts[ticker]    = now
             return price
@@ -85,6 +84,18 @@ def performance():
 
 
 # ── Positions with live P&L ────────────────────────────────────────────────────
+@app.route("/api/trade-history")
+def trade_history():
+    from trading.journal import get_closed_trades
+    return jsonify(get_closed_trades(limit=100))
+
+
+@app.route("/api/all-trades")
+def all_trades():
+    from trading.journal import get_all_trades
+    return jsonify(get_all_trades(limit=100))
+
+
 @app.route("/api/positions")
 def positions():
     pos = get_open_positions()
@@ -275,15 +286,9 @@ def trigger_scan():
         global is_running
         is_running = True
         try:
-            from main import scan_asset
-            for t in cfg.STOCK_WATCHLIST:
-                _log(f"Scanning {t}...")
-                try: scan_asset(t)
-                except Exception as e: _log(f"Error: {t}: {e}", "ERROR")
-            for t in cfg.CRYPTO_WATCHLIST:
-                _log(f"Scanning {t}...")
-                try: scan_asset(t)
-                except Exception as e: _log(f"Error: {t}: {e}", "ERROR")
+            from main import run_scan_cycle
+            _log("Starting full market scan...")
+            run_scan_cycle()
             _log("Scan complete.", "INFO")
         except Exception as e:
             _log(f"Scan error: {e}", "ERROR")
@@ -308,6 +313,15 @@ def update_settings():
     if "crypto_watchlist"   in data: cfg.CRYPTO_WATCHLIST      = [t.strip().upper() for t in data["crypto_watchlist"] if t.strip()]
     _log(f"Settings updated: {list(data.keys())}")
     return jsonify({"message": "Settings saved"})
+
+
+
+
+
+@app.route("/api/scans/recent")
+def recent_scans():
+    from trading.journal import get_recent_scans
+    return jsonify(get_recent_scans(limit=50))
 
 
 # ── Logs ───────────────────────────────────────────────────────────────────────
