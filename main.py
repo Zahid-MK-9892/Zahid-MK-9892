@@ -7,6 +7,9 @@ Usage:
     python main.py --loop       # Run every N minutes continuously
     python main.py --summary    # Show performance summary
     python main.py --watchlist  # Use fixed watchlist instead of full scan
+
+WEEK 1: market hours + regime filter
+WEEK 2: all 4 exchanges, sector limit, earnings blackout, cooling-off
 """
 
 import sys
@@ -24,7 +27,10 @@ except ImportError:
 import config
 from data.market_data import get_stock_data, get_crypto_data
 from data.news_fetcher import get_news, format_news_for_prompt
-from data.market_scanner import run_market_scan
+from data.market_scanner import (
+    run_market_scan, is_stock_market_open,
+    get_market_regime, get_open_exchanges
+)
 from analysis.ai_engine import analyze_asset
 from trading.risk_manager import approve_trade, calculate_position
 from trading.executor import execute_trade
@@ -125,7 +131,6 @@ def execute_candidate(candidate: dict):
         "TRADE"
     )
 
-    # Log the scan
     log_scan(ticker, price, analysis)
 
     order = execute_trade(ticker, position)
@@ -204,7 +209,18 @@ def run_scan_cycle():
     log(f"FRIDAY Scan Cycle — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "SCAN")
     log("═"*55, "INFO")
 
-    # Step 1: Exit check
+    # ── Week 1 + Week 2: Exchange status + regime ──────────────────
+    exchanges = get_open_exchanges()
+    open_exc  = [f"{n}({i['msg'].split()[0]})" for n, i in exchanges.items() if i["open"]]
+    closed_exc= [f"{n}({i['msg'].split()[0]})" for n, i in exchanges.items() if not i["open"]]
+    log(f"Open exchanges  : {', '.join(open_exc)  if open_exc   else 'None (crypto only)'}", "INFO")
+    log(f"Closed exchanges: {', '.join(closed_exc) if closed_exc else 'None'}", "INFO")
+
+    regime_data = get_market_regime()
+    log(f"Market regime   : {regime_data['message']}", "INFO")
+    # ──────────────────────────────────────────────────────────────
+
+    # Step 1: Exit check — always runs regardless of hours or regime
     check_exits()
     print()
 
@@ -213,7 +229,7 @@ def run_scan_cycle():
 
     # Step 2: Scan for entries
     if config.MARKET_SCAN_ENABLED:
-        log("Mode: FULL MARKET SCAN — scanning S&P 500 + crypto universe", "SCAN")
+        log("Mode: FULL MARKET SCAN — all open exchanges + crypto", "SCAN")
         candidates = run_market_scan(
             open_positions=open_positions,
             include_crypto=config.SCAN_INCLUDE_CRYPTO,
@@ -239,7 +255,6 @@ def run_scan_cycle():
 def show_summary_inline():
     summary = get_performance_summary()
     pos     = get_open_positions()
-
     print()
     log(f"── Performance: {summary.get('total_trades',0)} trades | "
         f"Win rate: {summary.get('win_rate',0)}% | "
@@ -251,11 +266,9 @@ def show_summary_inline():
 def show_summary():
     summary = get_performance_summary()
     pos     = get_open_positions()
-
     print(f"\n{c('── FRIDAY Performance ──','cyan')}")
     for k,v in summary.items():
         print(f"  {k}: {v}")
-
     print(f"\n{c(f'── Open Positions ({len(pos)}) ──','cyan')}")
     for p in pos:
         print(f"  {p['ticker']:<12} {p['shares']}sh @ ${p['entry_price']}"

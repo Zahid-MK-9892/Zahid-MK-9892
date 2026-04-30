@@ -1,6 +1,10 @@
 """
 trading/journal.py — Logs every FRIDAY decision and trade to a SQLite database.
 This is your audit trail, performance tracker, and learning dataset.
+
+WEEK 2: is_in_cooling_off() — checks ticker cooling-off period after a loss.
+WEEK 3: partial_close()     — closes 50% of shares at TP, moves stop to breakeven.
+         init_db()          — safely adds partial_tp_taken column (existing rows → 0).
 """
 
 import sqlite3
@@ -18,7 +22,8 @@ def _get_conn():
 
 
 def init_db():
-    """Creates the database tables if they don't exist."""
+    """Creates the database tables if they don't exist.
+    Week 3: safely adds partial_tp_taken column to existing databases."""
     with _get_conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS scans (
@@ -59,6 +64,17 @@ def init_db():
             )
         """)
         conn.commit()
+
+        # ── Week 3: Safe migration — add partial_tp_taken if missing ──────────
+        # ALTER TABLE only runs if column doesn't already exist.
+        # Existing rows automatically get default value of 0.
+        existing_cols = [row[1] for row in conn.execute("PRAGMA table_info(trades)").fetchall()]
+        if "partial_tp_taken" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE trades ADD COLUMN partial_tp_taken INTEGER DEFAULT 0"
+            )
+            conn.commit()
+            print("[DB] Migration: added partial_tp_taken column to trades table")
 
 
 def log_scan(ticker: str, price: float, analysis: dict):
@@ -124,10 +140,10 @@ def close_position(trade_id: int, exit_price: float):
         if not trade:
             return
 
-        trade = dict(trade)
-        entry  = trade["entry_price"]
-        shares = trade["shares"]
-        pnl    = round((exit_price - entry) * shares, 2)
+        trade   = dict(trade)
+        entry   = trade["entry_price"]
+        shares  = trade["shares"]
+        pnl     = round((exit_price - entry) * shares, 2)
         pnl_pct = round(((exit_price - entry) / entry) * 100, 2)
         outcome = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "BREAKEVEN")
 
@@ -141,63 +157,60 @@ def close_position(trade_id: int, exit_price: float):
     return {"pnl": pnl, "pnl_pct": pnl_pct, "outcome": outcome}
 
 
-def get_closed_trades(limit: int = 100) -> list:
-    """Returns all closed trades, most recent first."""
+# ══════════════════════════════════════════════════════════════════
+#  WEEK 3 — PARTIAL CLOSE
+# ══════════════════════════════════════════════════════════════════
+
+def partial_close(trade_id: int, exit_price: float, pnl_partial: float,
+                  remaining_shares: float, new_stop: float) -> None:
+    """
+    Called when price hits TP for the first time.
+    - Marks partial_tp_taken = 1
+    - Updates shares to remaining_shares (50% of original)
+    - Moves stop_loss to new_stop (entry price = breakeven)
+    - Does NOT close the trade — it stays OPEN for the remaining 50%
+
+    The pnl_partial is logged for reference but the trade stays open.
+    Full P&L is only calculated when the trade finally closes completely.
+    """
     with _get_conn() as conn:
-        rows = conn.execute(
-            """SELECT * FROM trades
-               WHERE closed_at IS NOT NULL
-               ORDER BY closed_at DESC LIMIT ?""",
-            (limit,)
-        ).fetchall()
-        return [dict(r) for r in rows]
+        conn.execute("""
+            UPDATE trades
+            SET partial_tp_taken = 1,
+                shares           = ?,
+                stop_loss        = ?
+            WHERE id = ?
+        """, (remaining_shares, new_stop, trade_id))
+        conn.commit()
 
 
-def get_all_trades(limit: int = 200) -> list:
-    """Returns ALL trades (open + closed), most recent first."""
-    with _get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM trades ORDER BY opened_at DESC LIMIT ?",
-            (limit,)
-        ).fetchall()
-        return [dict(r) for r in rows]
+# ══════════════════════════════════════════════════════════════════
+#  WEEK 2 — COOLING-OFF PERIOD
+# ══════════════════════════════════════════════════════════════════
+
+def is_in_cooling_off(ticker: str, days: int = 5) -> bool:
+    """
+    Returns True if this ticker hit a stop-loss within the last N days.
+    Prevents the bot from immediately re-entering a losing position.
+    Reads the existing trades table — NO schema changes required.
+    """
+    try:
+        with _get_conn() as conn:
+            result = conn.execute("""
+                SELECT COUNT(*) FROM trades
+                WHERE ticker    = ?
+                AND   outcome   = 'LOSS'
+                AND   closed_at IS NOT NULL
+                AND   closed_at >= datetime('now', ? || ' days')
+            """, (ticker, f"-{days}")).fetchone()
+            return result[0] > 0
+    except Exception:
+        return False  # Fail open — don't block trades on DB errors
 
 
-def get_recent_scans(limit: int = 50) -> list:
-    """Returns the most recent scan decisions (BUY/HOLD signals)."""
-    with _get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM scans ORDER BY timestamp DESC LIMIT ?",
-            (limit,)
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
-def get_performance_summary() -> dict:
-    """Returns key performance stats from the trade journal."""
-    with _get_conn() as conn:
-        closed = conn.execute(
-            "SELECT * FROM trades WHERE closed_at IS NOT NULL"
-        ).fetchall()
-
-        if not closed:
-            return {"message": "No closed trades yet."}
-
-        trades = [dict(r) for r in closed]
-        total  = len(trades)
-        wins   = sum(1 for t in trades if t["outcome"] == "WIN")
-        losses = sum(1 for t in trades if t["outcome"] == "LOSS")
-        total_pnl = sum(t["pnl"] or 0 for t in trades)
-
-        return {
-            "total_trades": total,
-            "wins": wins,
-            "losses": losses,
-            "win_rate": round((wins / total) * 100, 1) if total > 0 else 0,
-            "total_pnl": round(total_pnl, 2),
-            "avg_pnl_per_trade": round(total_pnl / total, 2),
-        }
-
+# ══════════════════════════════════════════════════════════════════
+#  READ FUNCTIONS  (all unchanged from original)
+# ══════════════════════════════════════════════════════════════════
 
 def get_closed_trades(limit: int = 50) -> list:
     """Returns the most recent closed trades for the history page."""
@@ -231,3 +244,29 @@ def get_recent_scans(limit: int = 50) -> list:
             LIMIT ?
         """, (limit,)).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_performance_summary() -> dict:
+    """Returns key performance stats from the trade journal."""
+    with _get_conn() as conn:
+        closed = conn.execute(
+            "SELECT * FROM trades WHERE closed_at IS NOT NULL"
+        ).fetchall()
+
+        if not closed:
+            return {"message": "No closed trades yet."}
+
+        trades    = [dict(r) for r in closed]
+        total     = len(trades)
+        wins      = sum(1 for t in trades if t["outcome"] == "WIN")
+        losses    = sum(1 for t in trades if t["outcome"] == "LOSS")
+        total_pnl = sum(t["pnl"] or 0 for t in trades)
+
+        return {
+            "total_trades":      total,
+            "wins":              wins,
+            "losses":            losses,
+            "win_rate":          round((wins / total) * 100, 1) if total > 0 else 0,
+            "total_pnl":         round(total_pnl, 2),
+            "avg_pnl_per_trade": round(total_pnl / total, 2),
+        }

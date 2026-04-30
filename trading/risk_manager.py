@@ -1,14 +1,142 @@
 """
 trading/risk_manager.py — Dynamic risk manager with conviction-based sizing.
 Position size scales with analysis score — higher conviction = larger position.
+
+WEEK 2 (new):
+  + SECTOR_MAP          — maps every supported ticker to its sector
+  + get_sector()        — looks up sector for any ticker
+  + MAX_SECTOR_POSITIONS — max 2 positions per sector at once
+  + approve_trade()     — now checks sector concentration + cooling-off period
 """
 
 import config
 
+MIN_CONFIDENCE      = 62   # Minimum confidence % to trade
+MAX_POSITIONS       = 14   # Max concurrent open positions
+MAX_SECTOR_POSITIONS = 2   # Max positions in the same sector at once
 
-MIN_CONFIDENCE   = 62    # Minimum confidence % to trade
-MAX_POSITIONS    = 14     # Max concurrent open positions
 
+# ══════════════════════════════════════════════════════════════════
+#  WEEK 2 — SECTOR MAP
+# ══════════════════════════════════════════════════════════════════
+
+SECTOR_MAP = {
+    # ── Technology ────────────────────────────────────────────────
+    "AAPL":"Technology",  "MSFT":"Technology",  "NVDA":"Technology",
+    "GOOGL":"Technology", "META":"Technology",  "ADBE":"Technology",
+    "CRM":"Technology",   "AMD":"Technology",   "INTC":"Technology",
+    "QCOM":"Technology",  "TXN":"Technology",   "IBM":"Technology",
+    "INTU":"Technology",  "NOW":"Technology",   "SNOW":"Technology",
+    "PLTR":"Technology",  "PANW":"Technology",  "CRWD":"Technology",
+    "DDOG":"Technology",  "NET":"Technology",   "ZS":"Technology",
+    "AVGO":"Technology",  "ORCL":"Technology",  "MDB":"Technology",
+    "GTLB":"Technology",  "RBLX":"Technology",  "COIN":"Technology",
+    # NSE Tech
+    "TCS.NS":"Technology",    "INFY.NS":"Technology",  "WIPRO.NS":"Technology",
+    "HCLTECH.NS":"Technology","TECHM.NS":"Technology",
+    # LSE Tech
+    # HKEX Tech
+    "0700.HK":"Technology",   "1810.HK":"Technology",
+
+    # ── Finance ───────────────────────────────────────────────────
+    "JPM":"Finance",  "BAC":"Finance",  "WFC":"Finance",
+    "GS":"Finance",   "MS":"Finance",   "C":"Finance",
+    "BLK":"Finance",  "AXP":"Finance",  "V":"Finance",
+    "MA":"Finance",   "SPGI":"Finance", "MCO":"Finance",
+    # NSE Finance
+    "HDFCBANK.NS":"Finance",  "ICICIBANK.NS":"Finance", "SBIN.NS":"Finance",
+    "KOTAKBANK.NS":"Finance", "AXISBANK.NS":"Finance",  "BAJFINANCE.NS":"Finance",
+    # LSE Finance
+    "HSBA.L":"Finance",  "BARC.L":"Finance", "LLOY.L":"Finance", "STAN.L":"Finance",
+    # HKEX Finance
+    "0005.HK":"Finance", "1299.HK":"Finance", "0388.HK":"Finance",
+    "2318.HK":"Finance", "1398.HK":"Finance", "0939.HK":"Finance",
+
+    # ── Healthcare ────────────────────────────────────────────────
+    "UNH":"Healthcare",  "JNJ":"Healthcare",  "LLY":"Healthcare",
+    "ABBV":"Healthcare", "MRK":"Healthcare",  "PFE":"Healthcare",
+    "AMGN":"Healthcare", "GILD":"Healthcare", "VRTX":"Healthcare",
+    "REGN":"Healthcare", "ISRG":"Healthcare", "MDT":"Healthcare",
+    "BSX":"Healthcare",  "ELV":"Healthcare",  "CI":"Healthcare",
+    "HUM":"Healthcare",  "CVS":"Healthcare",  "ZTS":"Healthcare",
+    "DXCM":"Healthcare",
+    # NSE Healthcare
+    "SUNPHARMA.NS":"Healthcare", "DRREDDY.NS":"Healthcare", "CIPLA.NS":"Healthcare",
+    # LSE Healthcare
+    "AZN.L":"Healthcare", "GSK.L":"Healthcare",
+
+    # ── Consumer ──────────────────────────────────────────────────
+    "HD":"Consumer",   "MCD":"Consumer",  "SBUX":"Consumer",
+    "NKE":"Consumer",  "TGT":"Consumer",  "COST":"Consumer",
+    "WMT":"Consumer",  "PG":"Consumer",   "KO":"Consumer",
+    "PEP":"Consumer",  "PM":"Consumer",   "MO":"Consumer",
+    "MNST":"Consumer", "CMG":"Consumer",  "YUM":"Consumer",
+    "DPZ":"Consumer",  "AMZN":"Consumer",
+    # NSE Consumer
+    "HINDUNILVR.NS":"Consumer", "ITC.NS":"Consumer",      "NESTLEIND.NS":"Consumer",
+    "ASIANPAINT.NS":"Consumer", "MARUTI.NS":"Consumer",   "TITAN.NS":"Consumer",
+    "TATAMOTORS.NS":"Consumer",
+    # LSE Consumer
+    "ULVR.L":"Consumer", "DGE.L":"Consumer", "ABF.L":"Consumer",
+    "CPG.L":"Consumer",
+    # HKEX Consumer
+    "9988.HK":"Consumer", "3690.HK":"Consumer",
+
+    # ── Industrial ────────────────────────────────────────────────
+    "HON":"Industrial", "CAT":"Industrial", "DE":"Industrial",
+    "RTX":"Industrial", "GE":"Industrial",  "ETN":"Industrial",
+    "EMR":"Industrial", "ITW":"Industrial", "NSC":"Industrial",
+    "UPS":"Industrial", "FDX":"Industrial",
+    # NSE Industrial
+    "LT.NS":"Industrial", "JSWSTEEL.NS":"Industrial", "ULTRACEMCO.NS":"Industrial",
+    # LSE Industrial
+    "RIO.L":"Industrial", "AAL.L":"Industrial",
+
+    # ── Energy ────────────────────────────────────────────────────
+    "XOM":"Energy", "CVX":"Energy", "SLB":"Energy",
+    "EOG":"Energy", "COP":"Energy",
+    # NSE Energy
+    "RELIANCE.NS":"Energy", "ONGC.NS":"Energy", "COALINDIA.NS":"Energy",
+    # LSE Energy
+    "SHEL.L":"Energy", "BP.L":"Energy",
+    # HKEX Energy
+    "0883.HK":"Energy",
+
+    # ── Utilities ─────────────────────────────────────────────────
+    "NEE":"Utilities", "SO":"Utilities", "DUK":"Utilities",
+    # NSE Utilities
+    "NTPC.NS":"Utilities", "POWERGRID.NS":"Utilities",
+    # LSE Utilities
+    "NG.L":"Utilities",
+
+    # ── Real Estate ───────────────────────────────────────────────
+    "PLD":"Real Estate", "AMT":"Real Estate",
+    "EQIX":"Real Estate", "PSA":"Real Estate",
+
+    # ── Telecom ───────────────────────────────────────────────────
+    "BHARTIARTL.NS":"Telecom",
+    "VOD.L":"Telecom", "BT-A.L":"Telecom",
+    "0941.HK":"Telecom",
+
+    # ── Conglomerate ──────────────────────────────────────────────
+    "BRK-B":"Conglomerate",
+
+    # ── Crypto (own sector — max 2 crypto at once) ────────────────
+    "BTC-USD":"Crypto",  "ETH-USD":"Crypto",  "BNB-USD":"Crypto",
+    "SOL-USD":"Crypto",  "ADA-USD":"Crypto",  "AVAX-USD":"Crypto",
+    "DOT-USD":"Crypto",  "LINK-USD":"Crypto", "XRP-USD":"Crypto",
+    "LTC-USD":"Crypto",  "BCH-USD":"Crypto",  "ALGO-USD":"Crypto",
+}
+
+
+def get_sector(ticker: str) -> str:
+    """Look up sector for a ticker. Returns 'Unknown' if not mapped."""
+    return SECTOR_MAP.get(ticker, "Unknown")
+
+
+# ══════════════════════════════════════════════════════════════════
+#  APPROVE TRADE  (Week 2: sector + cooling-off checks added)
+# ══════════════════════════════════════════════════════════════════
 
 def approve_trade(analysis: dict, market_data: dict,
                   open_positions: list) -> tuple:
@@ -28,6 +156,7 @@ def approve_trade(analysis: dict, market_data: dict,
         return False, "Analysis errored — not trading."
 
     ticker = market_data.get("ticker", "")
+
     if len(open_positions) >= MAX_POSITIONS:
         return False, f"Max positions ({MAX_POSITIONS}) reached."
 
@@ -39,56 +168,62 @@ def approve_trade(analysis: dict, market_data: dict,
     if not price or float(price) <= 0:
         return False, "Invalid price."
 
-    # Block penny stocks
     if float(price) < 5:
         return False, f"Price ${price} too low — avoiding penny stocks."
+
+    # ── WEEK 2: Sector concentration check ────────────────────────
+    sector = get_sector(ticker)
+    if sector != "Unknown":
+        sector_count = sum(
+            1 for p in open_positions
+            if get_sector(p.get("ticker", "")) == sector
+        )
+        if sector_count >= MAX_SECTOR_POSITIONS:
+            return False, (f"Sector limit reached — already have {sector_count} "
+                           f"{sector} positions (max {MAX_SECTOR_POSITIONS}).")
+
+    # ── WEEK 2: Cooling-off period check ──────────────────────────
+    try:
+        from trading.journal import is_in_cooling_off
+        if is_in_cooling_off(ticker, days=5):
+            return False, f"{ticker} in 5-day cooling-off period after recent stop-loss."
+    except Exception:
+        pass  # If journal check fails, don't block the trade
 
     return True, "All checks passed."
 
 
+# ══════════════════════════════════════════════════════════════════
+#  POSITION SIZING  (unchanged from original)
+# ══════════════════════════════════════════════════════════════════
+
 def calculate_position(price: float, analysis: dict,
-                       total_capital: float = None) -> dict:
+                        total_capital: float = None) -> dict:
     """
     Dynamic position sizing based on conviction score.
-    
-    Score 7-8 (very high) → risk 3% of capital per trade
-    Score 5-6 (high)      → risk 2% of capital per trade  
-    Score 3-4 (moderate)  → risk 1.5% of capital per trade
-    Score 1-2 (low)       → risk 1% of capital per trade
+    Score 7-8 → risk 3% | Score 5-6 → risk 2% | Score 3-4 → risk 1.5% | Score 1-2 → risk 1%
     """
     price = float(price)
     score = analysis.get("score", 2)
+    cap   = float(total_capital or config.CAPITAL_PER_TRADE)
 
-    # Capital base
-    cap = float(total_capital or config.CAPITAL_PER_TRADE)
-
-    # Conviction-based risk allocation
     if score >= 7:
-        risk_pct  = 3.0
-        size_label= "HIGH conviction"
+        risk_pct, size_label = 3.0, "HIGH conviction"
     elif score >= 5:
-        risk_pct  = 2.0
-        size_label= "MEDIUM conviction"
+        risk_pct, size_label = 2.0, "MEDIUM conviction"
     elif score >= 3:
-        risk_pct  = 1.5
-        size_label= "MODERATE conviction"
+        risk_pct, size_label = 1.5, "MODERATE conviction"
     else:
-        risk_pct  = 1.0
-        size_label= "LOW conviction"
+        risk_pct, size_label = 1.0, "LOW conviction"
 
-    # Use ATR-based stop if available, else config default
-    sl  = analysis.get("suggested_stop_loss")  or round(price*(1-config.STOP_LOSS_PERCENT/100), 4)
-    tp  = analysis.get("suggested_take_profit") or round(price*(1+config.TAKE_PROFIT_PERCENT/100), 4)
-    sl  = float(sl)
-    tp  = float(tp)
+    sl  = float(analysis.get("suggested_stop_loss")  or round(price*(1-config.STOP_LOSS_PERCENT/100), 4))
+    tp  = float(analysis.get("suggested_take_profit") or round(price*(1+config.TAKE_PROFIT_PERCENT/100), 4))
 
-    risk_per_share = max(price - sl, price * 0.01)
-    max_risk       = cap * (risk_pct / 100)
-    shares         = max(1, int(max_risk / risk_per_share))
-
-    # Cap at configured capital per trade
+    risk_per_share    = max(price - sl, price * 0.01)
+    max_risk          = cap * (risk_pct / 100)
+    shares            = max(1, int(max_risk / risk_per_share))
     max_shares_by_cap = max(1, int(config.CAPITAL_PER_TRADE / price))
-    shares = min(shares, max_shares_by_cap)
+    shares            = min(shares, max_shares_by_cap)
 
     total_cost = round(shares * price, 2)
     rr         = round((tp - price) / (price - sl), 2) if (price - sl) > 0 else 0

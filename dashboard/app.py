@@ -2,6 +2,10 @@
 dashboard/app.py — FRIDAY Web Dashboard Backend v2
 Run: python dashboard/app.py
 Open: http://localhost:5000
+
+FIXED: Added /api/trades/all route (HTML was calling this, not /api/all-trades)
+FIXED: fast_info price fetch uses getattr() not .get()
+FIXED: squeeze() scalar handled before .iloc call
 """
 
 import sys, os, threading, time
@@ -15,7 +19,8 @@ from flask_cors import CORS
 import config as cfg
 from trading.journal import (
     init_db, get_open_positions, get_performance_summary,
-    log_scan, log_trade, close_position
+    log_scan, log_trade, close_position,
+    get_closed_trades, get_all_trades, get_recent_scans
 )
 
 app = Flask(__name__, static_folder="static")
@@ -41,11 +46,29 @@ def _current_price(ticker: str) -> float:
         return _price_cache[ticker]
     try:
         import yfinance as yf
+        import pandas as pd
         yf_sym = ticker.replace("/USDT", "-USD").replace("/BTC", "-BTC").replace("/", "-")
-        tk   = yf.Ticker(yf_sym)
+        tk = yf.Ticker(yf_sym)
+
+        # fast_info is an OBJECT, not a dict — use getattr()
+        try:
+            fi = tk.fast_info
+            for attr in ("last_price", "lastPrice", "regularMarketPrice"):
+                val = getattr(fi, attr, None)
+                if val is not None:
+                    price = float(val)
+                    if price > 0:
+                        _price_cache[ticker] = price
+                        _price_ts[ticker]    = now
+                        return price
+        except Exception:
+            pass
+
+        # Fallback: history — handle scalar squeeze result
         hist = tk.history(period="3d", auto_adjust=True)
         if hist is not None and not hist.empty:
-            price = float(hist["Close"].iloc[-1])
+            close_data = hist["Close"].squeeze()
+            price = float(close_data.iloc[-1]) if hasattr(close_data, 'iloc') else float(close_data)
             _price_cache[ticker] = price
             _price_ts[ticker]    = now
             return price
@@ -83,19 +106,29 @@ def performance():
     return jsonify(get_performance_summary())
 
 
-# ── Positions with live P&L ────────────────────────────────────────────────────
+# ── Trade History routes ───────────────────────────────────────────────────────
 @app.route("/api/trade-history")
 def trade_history():
-    from trading.journal import get_closed_trades
     return jsonify(get_closed_trades(limit=100))
 
 
 @app.route("/api/all-trades")
-def all_trades():
-    from trading.journal import get_all_trades
+def all_trades_old():
     return jsonify(get_all_trades(limit=100))
 
 
+# ── /api/trades/all — what the HTML loadHistory() actually calls ───────────────
+@app.route("/api/trades/all")
+def trades_all():
+    try:
+        trades = get_all_trades(limit=200)
+        return jsonify(trades)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify([])
+
+
+# ── Positions with live P&L ────────────────────────────────────────────────────
 @app.route("/api/positions")
 def positions():
     pos = get_open_positions()
@@ -106,7 +139,7 @@ def positions():
         if current and entry and shares:
             pnl     = round((current - entry) * shares, 2)
             pnl_pct = round(((current - entry) / entry) * 100, 2) if entry else 0
-            p["current_price"] = current
+            p["current_price"]      = current
             p["unrealized_pnl"]     = pnl
             p["unrealized_pnl_pct"] = pnl_pct
         else:
@@ -151,10 +184,10 @@ def chart_data(ticker):
     try:
         import yfinance as yf
         import pandas as pd
-        period   = request.args.get("period", "3mo")
-        yf_sym   = ticker.replace("/USDT", "-USD").replace("/BTC", "-BTC").replace("/", "-")
-        df       = yf.download(yf_sym, period=period, interval="1d",
-                               progress=False, auto_adjust=True)
+        period = request.args.get("period", "3mo")
+        yf_sym = ticker.replace("/USDT", "-USD").replace("/BTC", "-BTC").replace("/", "-")
+        df     = yf.download(yf_sym, period=period, interval="1d",
+                             progress=False, auto_adjust=True)
         if df.empty:
             return jsonify({"error": "No data"}), 404
         if isinstance(df.columns, pd.MultiIndex):
@@ -225,7 +258,7 @@ Open positions:
 
 Answer trading questions concisely and helpfully. Be direct. Use data when possible."""
 
-    api_key = cfg.ANTHROPIC_API_KEY if hasattr(cfg, "ANTHROPIC_API_KEY") else ""
+    api_key = getattr(cfg, "ANTHROPIC_API_KEY", "")
     if not api_key or api_key == "your_anthropic_key_here":
         return jsonify({"reply": _rule_chat(message, positions)})
 
@@ -238,7 +271,7 @@ Answer trading questions concisely and helpfully. Be direct. Use data when possi
             system=system, messages=messages,
         )
         return jsonify({"reply": resp.content[0].text})
-    except Exception as e:
+    except Exception:
         return jsonify({"reply": _rule_chat(message, positions)})
 
 
@@ -299,6 +332,17 @@ def trigger_scan():
     return jsonify({"message": "Scan started"})
 
 
+# ── Scans history ──────────────────────────────────────────────────────────────
+@app.route("/api/scans/recent")
+def recent_scans():
+    try:
+        scans = get_recent_scans(limit=50)
+        return jsonify(scans)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify([])
+
+
 # ── Settings ───────────────────────────────────────────────────────────────────
 @app.route("/api/settings", methods=["POST"])
 def update_settings():
@@ -315,19 +359,46 @@ def update_settings():
     return jsonify({"message": "Settings saved"})
 
 
-
-
-
-@app.route("/api/scans/recent")
-def recent_scans():
-    from trading.journal import get_recent_scans
-    return jsonify(get_recent_scans(limit=50))
-
-
 # ── Logs ───────────────────────────────────────────────────────────────────────
 @app.route("/api/logs")
 def logs():
-    return jsonify(scan_log[-150:])
+    """
+    Returns combined logs: file logs from main.py --loop + in-memory dashboard logs.
+    main.py writes to friday.log in the project root.
+    """
+    combined = []
+
+    # ── Read from friday.log (written by main.py --loop) ──────────────────────
+    try:
+        log_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "friday.log"
+        )
+        if os.path.exists(log_path):
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+            for line in lines[-300:]:
+                line = line.rstrip("\n")
+                if not line.strip():
+                    continue
+                # Parse lines like: [10:12:34] [INFO] message
+                import re
+                m = re.match(r"\[(\d{2}:\d{2}:\d{2})\]\s*\[(\w+)\]\s*(.*)", line)
+                if m:
+                    combined.append({"time": m.group(1), "level": m.group(2), "msg": m.group(3), "source": "bot"})
+                else:
+                    combined.append({"time": "", "level": "INFO", "msg": line, "source": "bot"})
+    except Exception as e:
+        combined.append({"time": "", "level": "ERROR", "msg": f"Could not read friday.log: {e}", "source": "bot"})
+
+    # ── Append in-memory logs from dashboard-triggered scans ──────────────────
+    for entry in scan_log:
+        combined.append({**entry, "source": "dashboard"})
+
+    # Sort by time string (both use HH:MM:SS format so string sort works)
+    combined.sort(key=lambda x: x.get("time", ""))
+
+    return jsonify(combined[-300:])
 
 
 if __name__ == "__main__":

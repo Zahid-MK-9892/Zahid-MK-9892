@@ -414,7 +414,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <div id="page-history" class="page">
   <div class="ph">
     <div><div class="ph-title">Trade History</div><div class="ph-sub">All closed trades with P&amp;L — auto-closed by stop-loss or take-profit</div></div>
-    <button class="btn btn-outline" onclick="loadHistory()">↻ Refresh</button>
+    <button class="btn btn-outline" onclick="loadHistory().then(()=>toast('Trade history refreshed!'))">↻ Refresh</button>
   </div>
   <div class="grid-3" id="history-stats" style="margin-bottom:18px"></div>
   <div class="card">
@@ -922,10 +922,27 @@ async function loadHistory() {
 async function loadLogs() {
   const logs = await api('/api/logs');
   const box  = document.getElementById('full-log');
-  if (!logs?.length) { box.innerHTML='<div class="log-line"><span class="m muted">No logs yet. Run a scan first.</span></div>'; return; }
-  box.innerHTML = [...logs].reverse().map(l =>
-    `<div class="log-line"><span class="t">${l.time}</span><span class="m">${l.msg}</span></div>`
-  ).join('');
+  if (!logs?.length) {
+    box.innerHTML = '<div class="log-line"><span class="m muted">No logs yet. Bot logs appear here automatically when main.py --loop is running.</span></div>';
+    return;
+  }
+  const levelColor = {
+    BUY:'var(--green)', WIN:'var(--green)', TRADE:'var(--cyan)',
+    SCAN:'var(--purple)', ERROR:'var(--red)', LOSS:'var(--red)',
+    WARN:'var(--amber)', SKIP:'var(--amber)', INFO:'var(--muted2)'
+  };
+  box.innerHTML = logs.map(l => {
+    const col    = levelColor[l.level] || 'var(--muted2)';
+    const src    = l.source === 'bot'
+      ? '<span style="font-size:10px;color:var(--green);margin-left:6px">●BOT</span>'
+      : '<span style="font-size:10px;color:var(--accent2);margin-left:6px">●DASH</span>';
+    return `<div class="log-line">
+      <span class="t" style="color:var(--muted)">${l.time}</span>
+      <span style="color:${col};font-size:11px;font-weight:600;margin:0 6px">[${l.level}]</span>
+      <span class="m">${l.msg}</span>${src}
+    </div>`;
+  }).join('');
+  box.scrollTop = box.scrollHeight;
 }
 
 // ── Trade History ──────────────────────────────────────────────────────────────
@@ -1038,7 +1055,8 @@ setInterval(loadDashboard, 30000);
 setInterval(() => {
   const activePage = document.querySelector('.nav-item.active')?.dataset.page;
   if (activePage === 'positions') loadPositions();
-}, 30000);
+  if (activePage === 'logs')      loadLogs();
+}, 5000);  // logs refresh every 5s so bot activity appears in real-time
 </script>
 </body>
 </html>
