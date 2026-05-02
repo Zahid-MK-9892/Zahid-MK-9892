@@ -153,6 +153,8 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <div class="nav-item" data-page="backtest"><span class="nav-icon">🧪</span>Backtest</div>
     <div class="nav-item" data-page="chat"><span class="nav-icon">💬</span>Chat with FRIDAY</div>
     <div class="nav-item" data-page="alerts"><span class="nav-icon">🔔</span>WhatsApp Alerts</div>
+    <div class="nav-item" data-page="telegram"><span class="nav-icon">📱</span>Telegram Alerts</div>
+    <div class="nav-item" data-page="analytics"><span class="nav-icon">📉</span>Analytics</div>
     <div class="nav-item" data-page="settings"><span class="nav-icon">⚙️</span>Settings</div>
         <div class="nav-item" data-page="logs"><span class="nav-icon">📋</span>Logs</div>
   </div>
@@ -373,6 +375,61 @@ tr:hover td{background:rgba(255,255,255,.02)}
   </div>
 </div>
 
+<!-- ══ TELEGRAM ALERTS ══ -->
+<div id="page-telegram" class="page">
+  <div class="ph"><div><div class="ph-title">Telegram Alerts</div><div class="ph-sub">Free real-time alerts — no Twilio needed</div></div></div>
+  <div class="grid-2">
+    <div class="card" style="background:rgba(36,161,222,.06);border:1px solid rgba(36,161,222,.2)">
+      <div style="font-size:16px;font-weight:600;color:#24a1de;margin-bottom:4px">📱 Telegram Setup Guide</div>
+      <div style="font-size:13px;color:var(--muted2);margin-bottom:16px">100% free — no credit card, no Twilio</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--muted2)">
+          <div style="background:rgba(36,161,222,.15);color:#24a1de;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px">1</div>
+          <span>Open Telegram → search <strong>@BotFather</strong> → send <code>/newbot</code></span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--muted2)">
+          <div style="background:rgba(36,161,222,.15);color:#24a1de;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px">2</div>
+          <span>Name it <strong>FRIDAY Trading Bot</strong> → BotFather gives you a <strong>TOKEN</strong></span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--muted2)">
+          <div style="background:rgba(36,161,222,.15);color:#24a1de;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px">3</div>
+          <span>Search <strong>@userinfobot</strong> → send any message → get your <strong>Chat ID</strong></span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--muted2)">
+          <div style="background:rgba(36,161,222,.15);color:#24a1de;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px">4</div>
+          <span>Add both to your <strong>.env</strong> file and restart the dashboard</span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--muted2)">
+          <div style="background:rgba(36,161,222,.15);color:#24a1de;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px">5</div>
+          <span>Hit <strong>Send Test Message</strong> below to confirm it works</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="sec-title">Your .env Configuration</div>
+      <div style="font-family:monospace;font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r2);padding:14px;line-height:2.2;color:var(--muted2)">
+        <span style="color:var(--cyan)">TELEGRAM_BOT_TOKEN</span>=123456:ABC-your-token-here<br>
+        <span style="color:var(--cyan)">TELEGRAM_CHAT_ID</span>=987654321
+      </div>
+      <div style="margin-top:18px">
+        <div class="sec-title" style="margin-bottom:10px">What FRIDAY sends you</div>
+        <div style="display:flex;flex-direction:column;gap:7px;font-size:13px;color:var(--muted2)">
+          <div>📈 <strong>Trade opened</strong> — ticker, entry, SL, TP, R/R, signals</div>
+          <div>🎯 <strong>Take profit</strong> — full or partial close with P&L</div>
+          <div>🛑 <strong>Stop loss</strong> — exit price and P&L</div>
+          <div>🔒 <strong>Trailing stop</strong> — when stop is moved up</div>
+          <div>🟢 <strong>Daily summary</strong> — P&L, win rate, open positions</div>
+        </div>
+      </div>
+      <div style="margin-top:18px;display:flex;gap:10px;align-items:center">
+        <div id="tg-status" class="badge badge-gray">Not configured</div>
+        <div id="tg-chatid" style="font-size:12px;color:var(--muted)"></div>
+        <button class="btn btn-sm" style="background:rgba(36,161,222,.15);color:#24a1de;border:1px solid rgba(36,161,222,.3)" onclick="testTelegram()">📱 Send Test Message</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ══ SETTINGS ══ -->
 <div id="page-settings" class="page">
   <div class="ph">
@@ -422,6 +479,45 @@ tr:hover td{background:rgba(255,255,255,.02)}
   </div>
 </div>
 
+<!-- ══ ANALYTICS ══ -->
+<div id="page-analytics" class="page">
+  <div class="ph">
+    <div><div class="ph-title">Analytics</div><div class="ph-sub">Advanced performance metrics computed from your trade journal</div></div>
+    <button class="btn btn-outline" onclick="loadAnalytics()">↻ Refresh</button>
+  </div>
+
+  <!-- Metric cards row 1 -->
+  <div class="grid-4" id="analytics-cards-1" style="margin-bottom:14px">
+    <div class="card"><div class="card-label">Sharpe Ratio</div><div class="card-val cyan" id="an-sharpe">—</div><div class="card-sub">Risk-adjusted return (≥1.0 = good)</div></div>
+    <div class="card"><div class="card-label">Max Drawdown</div><div class="card-val red" id="an-dd">—</div><div class="card-sub">Largest peak-to-trough loss</div></div>
+    <div class="card"><div class="card-label">Profit Factor</div><div class="card-val green" id="an-pf">—</div><div class="card-sub">Wins ÷ Losses (≥1.5 = good)</div></div>
+    <div class="card"><div class="card-label">Avg Hold Time</div><div class="card-val amber" id="an-hold">—</div><div class="card-sub">Average days per trade</div></div>
+  </div>
+
+  <!-- Metric cards row 2 -->
+  <div class="grid-4" style="margin-bottom:20px">
+    <div class="card"><div class="card-label">Win Rate — Stocks</div><div class="card-val cyan" id="an-wr-stocks">—</div><div class="card-sub">Closed stock trades only</div></div>
+    <div class="card"><div class="card-label">Win Rate — Crypto</div><div class="card-val purple" id="an-wr-crypto">—</div><div class="card-sub">Closed crypto trades only</div></div>
+    <div class="card">
+      <div class="card-label">Best Ticker</div>
+      <div class="card-val green" id="an-best-val">—</div>
+      <div class="card-sub" id="an-best-ticker">By cumulative P&L</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Worst Ticker</div>
+      <div class="card-val red" id="an-worst-val">—</div>
+      <div class="card-sub" id="an-worst-ticker">By cumulative P&L</div>
+    </div>
+  </div>
+
+  <!-- Monthly P&L chart -->
+  <div class="card">
+    <div class="sec-title">Monthly P&L</div>
+    <div id="an-monthly-empty" class="empty" style="display:none">No closed trades yet — monthly P&L will appear here.</div>
+    <div id="an-monthly-chart" style="padding:8px 0"></div>
+  </div>
+</div>
+
 <!-- ══ LOGS ══ -->
 <div id="page-logs" class="page">
   <div class="ph">
@@ -454,6 +550,8 @@ document.querySelectorAll('.nav-item').forEach(el => {
     if (pg === 'history') loadHistory();
     if (pg === 'charts') initChartSelectors();
     if (pg === 'alerts') checkWaConfig();
+    if (pg === 'telegram') checkTelegramConfig();
+    if (pg === 'analytics') loadAnalytics();
     if (pg === 'scan') updateScanCards();
   });
 });
@@ -1047,6 +1145,104 @@ function renderScansTable(scans) {
   el.innerHTML = `<table><thead><tr>
     <th>Time</th><th>Ticker</th><th>Price</th><th>Signal</th><th>Confidence</th><th>Sentiment</th><th>Reasoning</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ── Telegram ───────────────────────────────────────────────────────────────────
+async function checkTelegramConfig() {
+  const r = await api('/api/telegram/config');
+  const el = document.getElementById('tg-status');
+  const ci = document.getElementById('tg-chatid');
+  if (r.configured) {
+    el.textContent = 'Configured ✓'; el.className = 'badge badge-green';
+    if (ci) ci.textContent = 'Chat ID: ' + r.chat_id;
+  } else {
+    el.textContent = 'Not configured'; el.className = 'badge badge-gray';
+    if (ci) ci.textContent = '';
+  }
+}
+
+async function testTelegram() {
+  const r = await api('/api/telegram/test', 'POST');
+  if (r.status === 'sent')  toast('Telegram message sent! Check your phone 📱');
+  else if (r.status === 'mock') toast('Mock mode — add token to .env to send real messages', 'var(--amber)');
+  else toast('Error: ' + (r.error || 'unknown'), 'var(--red)');
+}
+
+// ── Analytics ──────────────────────────────────────────────────────────────────
+async function loadAnalytics() {
+  const r = await api('/api/analytics');
+  if (r.error) { toast('Analytics error: ' + r.error, 'var(--red)'); return; }
+
+  // Sharpe Ratio
+  const sharpeEl = document.getElementById('an-sharpe');
+  if (r.sharpe_ratio === null || r.sharpe_ratio === undefined) {
+    sharpeEl.textContent = 'N/A';
+    sharpeEl.className   = 'card-val muted';
+  } else {
+    sharpeEl.textContent = r.sharpe_ratio.toFixed(2);
+    sharpeEl.className   = 'card-val ' + (r.sharpe_ratio >= 1 ? 'green' : r.sharpe_ratio >= 0 ? 'amber' : 'red');
+  }
+
+  // Max Drawdown
+  document.getElementById('an-dd').textContent = r.max_drawdown_pct + '%';
+
+  // Profit Factor
+  const pfEl = document.getElementById('an-pf');
+  if (r.profit_factor === null || r.profit_factor === undefined) {
+    pfEl.textContent = 'N/A'; pfEl.className = 'card-val muted';
+  } else {
+    pfEl.textContent = r.profit_factor.toFixed(2);
+    pfEl.className   = 'card-val ' + (r.profit_factor >= 1.5 ? 'green' : r.profit_factor >= 1 ? 'amber' : 'red');
+  }
+
+  // Avg Hold
+  document.getElementById('an-hold').textContent = r.avg_holding_days + 'd';
+
+  // Win rates
+  document.getElementById('an-wr-stocks').textContent = r.win_rate_stocks + '%';
+  document.getElementById('an-wr-crypto').textContent = r.win_rate_crypto + '%';
+
+  // Best / Worst
+  const best = r.best_ticker  || {ticker:'—', pnl:0};
+  const wrst = r.worst_ticker || {ticker:'—', pnl:0};
+  document.getElementById('an-best-val').textContent    = best.pnl >= 0 ? '+$'+best.pnl.toFixed(2) : '-$'+Math.abs(best.pnl).toFixed(2);
+  document.getElementById('an-best-ticker').textContent = best.ticker;
+  document.getElementById('an-worst-val').textContent   = wrst.pnl >= 0 ? '+$'+wrst.pnl.toFixed(2) : '-$'+Math.abs(wrst.pnl).toFixed(2);
+  document.getElementById('an-worst-ticker').textContent= wrst.ticker;
+
+  // Monthly P&L bar chart
+  const monthly = r.monthly_pnl || [];
+  const chartEl = document.getElementById('an-monthly-chart');
+  const emptyEl = document.getElementById('an-monthly-empty');
+
+  if (!monthly.length) {
+    emptyEl.style.display = 'block';
+    chartEl.innerHTML = '';
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+  const maxAbs = Math.max(...monthly.map(m => Math.abs(m.pnl)), 1);
+  const barH   = 180;
+
+  chartEl.innerHTML = `
+    <div style="display:flex;align-items:flex-end;gap:6px;height:${barH+40}px;padding:0 8px;overflow-x:auto">
+      ${monthly.map(m => {
+        const pct    = Math.abs(m.pnl) / maxAbs;
+        const h      = Math.max(4, Math.round(pct * barH));
+        const color  = m.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        const pnlStr = m.pnl >= 0 ? '+$'+m.pnl.toFixed(0) : '-$'+Math.abs(m.pnl).toFixed(0);
+        const label  = m.month.slice(0,7);
+        return `
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:48px;flex:1">
+            <div style="font-size:10px;color:${color};font-weight:600">${pnlStr}</div>
+            <div style="width:100%;height:${h}px;background:${color};border-radius:4px 4px 0 0;opacity:.85;transition:opacity .2s"
+                 onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.85"></div>
+            <div style="font-size:10px;color:var(--muted);transform:rotate(-35deg);transform-origin:top left;white-space:nowrap;margin-top:6px">${label}</div>
+          </div>`;
+      }).join('')}
+    </div>
+  `;
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────

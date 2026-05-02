@@ -164,6 +164,16 @@ def check_and_close_positions() -> list:
         if new_trail > stop_loss:
             print(f"  [TRAIL] {ticker} stop updated: ${stop_loss} → ${new_trail}")
             _update_trailing_stop(trade_id, new_trail)
+            try:
+                from notifications.telegram import send_trailing_stop_alert
+                send_trailing_stop_alert(
+                    ticker  = ticker,
+                    old_sl  = stop_loss,
+                    new_sl  = new_trail,
+                    current = current,
+                )
+            except Exception:
+                pass
             stop_loss = new_trail  # use updated value for exit checks this cycle
 
         # ── Step 3: Partial TP (first time price hits TP) ────────────────────
@@ -183,13 +193,25 @@ def check_and_close_positions() -> list:
                 new_stop=entry,   # move stop to breakeven
             )
 
-            # Send WhatsApp alert for partial close
-            _send_whatsapp(
+            # Send alerts for partial close
+            _partial_msg = (
                 f"🎯 F.R.I.D.A.Y PARTIAL TAKE PROFIT\n"
                 f"📌 {ticker} — 50% closed @ ${current}\n"
                 f"Partial P&L: +${pnl_partial}\n"
                 f"Remaining 50% running with stop at breakeven (${entry})"
             )
+            _send_whatsapp(_partial_msg)
+            try:
+                from notifications.telegram import send_partial_tp_alert
+                send_partial_tp_alert(
+                    ticker          = ticker,
+                    current         = current,
+                    pnl_partial     = pnl_partial,
+                    entry           = entry,
+                    remaining_shares= half_shares,
+                )
+            except Exception:
+                pass
 
             closed.append({
                 "ticker":      ticker,
@@ -227,6 +249,18 @@ def check_and_close_positions() -> list:
             f"Entry: ${entry} → Exit: ${current}\n"
             f"P&L: ${pnl:+.2f}"
         )
+        try:
+            from notifications.telegram import send_close_alert
+            send_close_alert(
+                ticker      = ticker,
+                exit_reason = exit_reason,
+                entry       = entry,
+                exit_price  = current,
+                pnl         = pnl,
+                shares      = shares,
+            )
+        except Exception:
+            pass
 
         closed.append({
             "ticker":      ticker,
@@ -252,6 +286,14 @@ def _send_whatsapp(message: str) -> None:
     except Exception:
         pass
 
+
+def _send_telegram(message: str) -> None:
+    """Send Telegram alert. Silently skips if not configured."""
+    try:
+        from notifications.telegram import send_custom_message
+        send_custom_message(message)
+    except Exception:
+        pass
 
 def _close_on_broker(pos: dict, exit_price: float) -> None:
     """Attempt to close on Alpaca. Silently ignores errors."""

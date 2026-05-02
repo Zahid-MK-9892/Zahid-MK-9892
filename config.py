@@ -17,6 +17,10 @@ BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY", "")
 BINANCE_TESTNET    = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
 NEWS_API_KEY       = os.getenv("NEWS_API_KEY", "")
 
+# ── Telegram Alerts (free — no credit card needed) ────────────────────────────
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
+
 # ── Mode ───────────────────────────────────────────────────────────────────────
 MOCK_MODE = os.getenv("MOCK_MODE", "true").lower() == "true"
 

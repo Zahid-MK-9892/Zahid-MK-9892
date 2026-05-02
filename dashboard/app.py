@@ -290,6 +290,185 @@ def _rule_chat(msg: str, positions: list) -> str:
         return f"Hey! I'm FRIDAY, your AI trading assistant. I'm watching {len(cfg.STOCK_WATCHLIST)} stocks and {len(cfg.CRYPTO_WATCHLIST)} crypto pairs. How can I help?"
     return "I'm running in rule-based mode (no Anthropic credits). Add credits at console.anthropic.com to enable full AI chat. I can still help with positions, settings, and scan results!"
 
+# ── Telegram ───────────────────────────────────────────────────────────────────
+@app.route("/api/telegram/test", methods=["POST"])
+def telegram_test():
+    from notifications.telegram import send_custom_message
+    result = send_custom_message(
+        "🤖 FRIDAY test message — Telegram alerts are working!"
+    )
+    return jsonify(result)
+
+
+@app.route("/api/telegram/config", methods=["GET"])
+def telegram_config():
+    import os
+    token   = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    placeholders = {"your_telegram_bot_token_here", "your_chat_id_here", ""}
+    configured = bool(token) and token not in placeholders and \
+                 bool(chat_id) and chat_id not in placeholders
+    return jsonify({
+        "configured": configured,
+        "chat_id":    chat_id if configured else "",
+    })
+
+
+# ── Analytics ──────────────────────────────────────────────────────────────────
+@app.route("/api/analytics")
+def analytics():
+    """
+    Computes advanced performance metrics from the journal DB.
+    No schema changes — reads existing trades table only.
+
+    Returns:
+      sharpe_ratio       — annualised risk-adjusted return (needs 10+ trades)
+      max_drawdown_pct   — largest peak-to-trough % decline in equity curve
+      profit_factor      — total wins / abs(total losses). >1.5 = good
+      avg_holding_days   — average days a position was held
+      win_rate_stocks    — win rate for STOCK asset_type only
+      win_rate_crypto    — win rate for CRYPTO asset_type only
+      best_ticker        — ticker with highest cumulative P&L
+      worst_ticker       — ticker with lowest cumulative P&L
+      monthly_pnl        — list of {month, pnl} for bar chart
+      total_trades       — total closed trades (for context)
+    """
+    import sqlite3
+    import math
+    from pathlib import Path
+
+    db_path = Path(__file__).parent.parent / "friday_journal.db"
+
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("""
+            SELECT ticker, asset_type, pnl, outcome,
+                   opened_at, closed_at
+            FROM trades
+            WHERE closed_at IS NOT NULL
+            ORDER BY closed_at ASC
+        """).fetchall()
+        conn.close()
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+    if not rows:
+        return jsonify({
+            "sharpe_ratio":     None,
+            "max_drawdown_pct": 0,
+            "profit_factor":    None,
+            "avg_holding_days": 0,
+            "win_rate_stocks":  0,
+            "win_rate_crypto":  0,
+            "best_ticker":      {"ticker": "—", "pnl": 0},
+            "worst_ticker":     {"ticker": "—", "pnl": 0},
+            "monthly_pnl":      [],
+            "total_trades":     0,
+        })
+
+    trades = [dict(r) for r in rows]
+
+    # ── Profit Factor ─────────────────────────────────────────────────────────
+    total_wins   = sum(t["pnl"] for t in trades if (t["pnl"] or 0) > 0)
+    total_losses = sum(t["pnl"] for t in trades if (t["pnl"] or 0) < 0)
+    profit_factor = (
+        round(total_wins / abs(total_losses), 2)
+        if total_losses != 0 else None
+    )
+
+    # ── Max Drawdown ──────────────────────────────────────────────────────────
+    equity   = 0.0
+    peak     = 0.0
+    max_dd   = 0.0
+    for t in trades:
+        equity += (t["pnl"] or 0)
+        if equity > peak:
+            peak = equity
+        if peak > 0:
+            dd = (peak - equity) / peak * 100
+            if dd > max_dd:
+                max_dd = dd
+    max_drawdown_pct = round(max_dd, 2)
+
+    # ── Sharpe Ratio ──────────────────────────────────────────────────────────
+    # Computed from daily P&L series. Needs 10+ trades for meaning.
+    sharpe_ratio = None
+    pnl_series   = [t["pnl"] or 0 for t in trades]
+    if len(pnl_series) >= 10:
+        avg_r  = sum(pnl_series) / len(pnl_series)
+        var    = sum((x - avg_r) ** 2 for x in pnl_series) / len(pnl_series)
+        std_r  = math.sqrt(var)
+        if std_r > 0:
+            sharpe_ratio = round((avg_r / std_r) * math.sqrt(252), 2)
+
+    # ── Average Holding Days ──────────────────────────────────────────────────
+    holding_days = []
+    for t in trades:
+        try:
+            from datetime import datetime as dt
+            opened = dt.fromisoformat(t["opened_at"])
+            closed = dt.fromisoformat(t["closed_at"])
+            days   = (closed - opened).days
+            holding_days.append(days)
+        except Exception:
+            continue
+    avg_holding_days = (
+        round(sum(holding_days) / len(holding_days), 1)
+        if holding_days else 0
+    )
+
+    # ── Win Rate by Asset Type ────────────────────────────────────────────────
+    def _wr(asset_type):
+        subset = [t for t in trades if (t["asset_type"] or "STOCK") == asset_type]
+        if not subset:
+            return 0
+        wins = sum(1 for t in subset if t["outcome"] == "WIN")
+        return round(wins / len(subset) * 100, 1)
+
+    win_rate_stocks = _wr("STOCK")
+    win_rate_crypto = _wr("CRYPTO")
+
+    # ── Best / Worst Ticker ───────────────────────────────────────────────────
+    ticker_pnl = {}
+    for t in trades:
+        tk = t["ticker"]
+        ticker_pnl[tk] = ticker_pnl.get(tk, 0) + (t["pnl"] or 0)
+
+    if ticker_pnl:
+        best_tk  = max(ticker_pnl, key=ticker_pnl.get)
+        worst_tk = min(ticker_pnl, key=ticker_pnl.get)
+        best_ticker  = {"ticker": best_tk,  "pnl": round(ticker_pnl[best_tk],  2)}
+        worst_ticker = {"ticker": worst_tk, "pnl": round(ticker_pnl[worst_tk], 2)}
+    else:
+        best_ticker  = {"ticker": "—", "pnl": 0}
+        worst_ticker = {"ticker": "—", "pnl": 0}
+
+    # ── Monthly P&L ───────────────────────────────────────────────────────────
+    monthly = {}
+    for t in trades:
+        try:
+            month = t["closed_at"][:7]   # "YYYY-MM"
+            monthly[month] = monthly.get(month, 0) + (t["pnl"] or 0)
+        except Exception:
+            continue
+    monthly_pnl = [
+        {"month": m, "pnl": round(v, 2)}
+        for m, v in sorted(monthly.items())
+    ]
+
+    return jsonify({
+        "sharpe_ratio":     sharpe_ratio,
+        "max_drawdown_pct": max_drawdown_pct,
+        "profit_factor":    profit_factor,
+        "avg_holding_days": avg_holding_days,
+        "win_rate_stocks":  win_rate_stocks,
+        "win_rate_crypto":  win_rate_crypto,
+        "best_ticker":      best_ticker,
+        "worst_ticker":     worst_ticker,
+        "monthly_pnl":      monthly_pnl,
+        "total_trades":     len(trades),
+    })
 
 # ── WhatsApp ───────────────────────────────────────────────────────────────────
 @app.route("/api/whatsapp/test", methods=["POST"])

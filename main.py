@@ -148,6 +148,12 @@ def execute_candidate(candidate: dict):
             send_trade_alert(order, analysis, position)
         except Exception:
             pass
+
+        try:
+            from notifications.telegram import send_trade_alert as tg_trade_alert
+            tg_trade_alert(order, analysis, position)
+        except Exception:
+            pass
     else:
         log(f"Order failed for {ticker}: {order.get('error','unknown')}", "ERROR")
 
@@ -252,15 +258,38 @@ def run_scan_cycle():
     show_summary_inline()
 
 
+# Tracks the last date a daily summary was sent — avoids duplicate sends
+_last_summary_date = None
+
+
 def show_summary_inline():
+    """
+    Prints inline performance summary after every scan cycle.
+    Also sends a Telegram daily summary once per day —
+    fires on the FIRST scan that runs after midnight each day.
+    """
+    global _last_summary_date
+
     summary = get_performance_summary()
     pos     = get_open_positions()
+
     print()
     log(f"── Performance: {summary.get('total_trades',0)} trades | "
         f"Win rate: {summary.get('win_rate',0)}% | "
         f"P&L: ${summary.get('total_pnl',0)}", "INFO")
     if pos:
         log(f"── Open: {', '.join(p['ticker'] for p in pos)}", "INFO")
+
+    # ── Telegram daily summary — once per calendar day ────────────────────────
+    today = datetime.now().date()
+    if _last_summary_date != today:
+        _last_summary_date = today
+        try:
+            from notifications.telegram import send_daily_summary
+            send_daily_summary(summary, pos)
+            log("Telegram daily summary sent.", "INFO")
+        except Exception as e:
+            log(f"Telegram daily summary failed: {e}", "WARN")
 
 
 def show_summary():
